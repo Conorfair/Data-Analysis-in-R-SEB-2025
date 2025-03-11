@@ -1,0 +1,305 @@
+---
+title: "Data Analysis in R"
+subtitle: "Data Management and Visualization"
+author: "Conor Fair"
+date: "Mar-11-2025"
+output: html_document
+header-includes:
+  - \usepackage{titling}
+  - \pretitle{\begin{flushleft}}
+  - \posttitle{\end{flushleft}}
+editor_options: 
+  chunk_output_type: console
+---
+```{r, include = FALSE}
+#YAML - Yet Another Markup Language
+```
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Using RStudio
+
+#### R Markdown File
+
+The type of document we are using is called an R Markdown file. This allows us to write in text to explain details of the analysis in between the code used to produce said analysis. This is a valuable tool and process that helps save your code and provide an opportunity for you to write an narrative of your analysis. This last point is meaningful given the scientific community's encouragement for reproducible science. The goal is for you to publish your research in a way that others can follow your analysis to every detail and verify your results.
+
+Here are some resources detailing the [scale of concern](https://www.nature.com/articles/533452a) and suggestions for [how to adopt better practices](https://www.annualreviews.org/docserver/fulltext/publhealth/42/1/annurev-publhealth-012420-105110.pdf?expires=1740151105&id=id&accname=guest&checksum=0C65C58956187946C3BE2A3603B7CB65) regarding reproducible science.
+
+R Markdown has it's own coding language quirks you will need to learn if you want to use it to its fullest potential. However, we will stick to the basics for now. You can find more information at this [link](https://cran.r-project.org/web/packages/rmarkdown/vignettes/rmarkdown.html).
+
+#### Environment Tab
+
+The environment tab is where you can see the list of objects you have saved in your R session. This is where you can see the data you have loaded, the functions you have created, and the variables you have assigned. You can also see the data type of each object, and the size of the object in memory. There are other functions you can use to see the structure of the data, the summary statistics, and the first few rows of the data, etc., so I often ignore this tab (personal preference).
+
+#### Console
+
+This is where you see the output of the code - the results of your analysis, and the error messages you need to translate to help troubleshoot errors in your code. You can also run code directly into the console, but this will not be saved in the R Markdown file. Code run in the console will, however, still appear in the environment tab, so be mindful of how you use the console.
+
+#### Files Tab
+
+This tab is very useful for navigating your working directory and finding the files you need to load into R. You can also use the `here` package to direct RStudio where to look for files based on the current working directory at the time when the package is loaded (i.e., using the `library()` function). This function uses what is called the relative path name to locate files relative to the Rproject root. This is what allows us to create a reproducible document. We will go over this process in detail later.
+
+#### Plots Tab
+
+This window allows you to view the plots you create in R. You can zoom in and out, save the plot as an image file, and adjust the size of the plot. This is a useful tool for reviewing the plots you create in R. This is an imperfect way to save images for presentations and publications. We will discuss a better way to save images later.
+
+#### Packages Tab
+
+The packages tab allows you to see what packages are installed locally on your computer. You can also load packages from this tab. This is a useful tool for managing the packages you have installed and loaded into R. You can also see the version of the package you have installed, and the version of the package that is available on CRAN (Comprehensive R Archive Network - storage of current versions of R packages). Recognizing the specific version of the package you used to create the analysis is important for reproducibility as the specific behavior of a package can change as they are updated.
+
+#### Help Tab
+
+The help tab is a useful tool for finding help documents on packages and functions. You can search for a package or function in the search bar, and the help tab will display the help document for that package or function. This is a useful tool for learning how to use a package or function, and for troubleshooting errors in your code. You can also use the "?" before the package or function to call for help in the console.
+
+## Import Files from Github
+
+There are many ways that you can share Rprojects and their associated files. One way is to use Github. Github is a version control system that allows you to share code and data with your collaborators and store your data to be accessed later, if needed. Today's seminar will serve as an example of how you can use Github to share files with your collaborators.
+
+Follow this [link](https://github.com/Conorfair) to access the Github repository for this seminar. You can download the files by clicking on the green "Code" button and selecting "Download ZIP". Windows operating systems will first need to unzip the folder by right clicking on the folder and selecting "unpack zip file". You will then save the files to your computer locally in a location that makes sense to you given your own file management system.
+
+You can also clone the repository to your local machine by copying the URL and using the `git clone` command in the terminal, or when you create a new Rproject and select the version control option - which allows you to clone a project from a git repository. Cloning the repository may not be familiar for those of you who don't have a Github account, and downloading the files will work just as well.
+
+You should now have access to the files needed for this seminar. You should also see the files in the Files tab in RStudio. Within the folder you downloaded you will see a folder called "data" that contains the files we will use in this seminar, a folder called "outputs" that contains the output files we will create in this seminar, and a folder called "scripts" that contains this R Markdown file along with the other R Markdown files and their associated html files. I recommend using a similar file structure with data, outputs, and script folders when you create your own Rprojects.
+
+If you haven't done so already, open the R Markdown file called "Data Management and Visualization.Rmd" in the "scripts" folder. Then you should navigate to the folder location where you saved these files in the Files tab in RStudio. Once you are in the correct folder location, click the blue gear symbol labeled "More" and select "Set As Working Directory". This will set the working directory to the folder where the files are located. As long as you open this Rproject file and set the working directory in this way, you will be able to access the files in the "data" folder using the `here` package. Now we can begin with the first example.
+
+## Loading Data with Diamondback moths
+
+We will use an example data set to practice the steps to load the data and make sure that the format of the data meet the expectations based on the description of the data. This is a common step in the data analysis process that is often overlooked. It is important to make sure that the data is loaded correctly and that the format of the data is correct before you begin your analysis. This will save you time and frustration later in the analysis process.
+
+Here is a description of the data:
+
+Diamondback moths (*Plutella xylostella*) are pests that can be controlled using biological control agents (*Cotesia vestalis*), and Uefune et al. tested the efficacy of synthetic herbivory-induced plant volitiles (HIPVs) to attract *C. vestalis* to control *P. xylostella* (2020). The experiment was designed with a treatment group with the HIPVs and a control group without the treatment. Yellow sticky cards were placed weekly within each greenhouse to count the number of *C. vestalis* and *P. xylostella* observed over six months. We expect to see a categorical variable for the treatment group, and integer variables for the number of *C. vestalis* (parasitoids) and *P. xylostella* (moths) observed.
+
+The first step is to install any packages we may use if you haven't already done so - we can check the packages tab to make sure they are there. Once the packages are installed, we call them using the `library()` function. The `readr` package is used to read in csv files. If we were to read in the csv file using only the `read_csv()` function, RStudio would look for the file in the working directory. There is no file of that name in the working directory.
+
+```{r}
+# install.packages("readr") 
+# install.packages("here")
+library(readr) # package to use read_csv function
+# try this code
+# moth <- read_csv("uefunex.csv") 
+# this will not work because RStudio will look for this file in the working directory, but this file does not exist in that location
+```
+
+This is a common problem when sharing Rprojects and you use code like this `setwd("path/that/only/works/on/my/machine")` without using the `here` package and relative path names. We will use the `here` package to direct RStudio where to look for the file. Earlier we set the working directory to the folder where the relevant files are located, so when we load the `here` package it will direct RStudio to look in that folder for the files we want to load.
+
+The "data" folder relative to the Rproject root folder contains the file named "uefunex.csv" - we can follow this through the folder structure in the Files tab. The `col_types` argument in the `read_csv()` function is a helpful tool that allows us to specify the format of each column in the file. "c" refers to a categorical variable, while "d" refers to a double precision variable - means that it can have a decimal value. Both lines of code achieve the same result in this scenario because the entries in the treatment column are letters and are read in as characters by default by R. There may be times where a treatment variable is coded as a number but you still want to read in the variable as a character. The second set of code that includes the `col_types` argument can help you specify the format of the variables as you read in the data set.
+
+The package `here` is a useful tool that uses the relative path name to locate files relative to the Rproject root (working directory). This helps us to create a reproducible document and support the scientific community's efforts to improve transparency and reproducibility throughout the data analysis process.
+
+```{r}
+# getwd() 
+# make sure the working directory is set to the folder you downloaded from Github that includes the files we will use in this seminar
+library(here) # package to use here function
+moth <- read_csv(here("data", "uefunex.csv"))
+moth <- read_csv(here("data", "uefunex.csv"), col_types = "cdd")
+
+# either method will produce the same result where the variables are coded as chr, dbl, dbl
+# the second method is more efficient because it specifies the format of the variables
+```
+
+After we load the data we want to make sure that the data was loaded correctly and it follows the description of the characteristics of the data. Recall that "treatment" is a categorical variable that is either treated or control, and moth and parasitoid is a count of the number of insects observed - we should expect integer values.
+
+There are many different tools you can use to review the structure and format of the data. The function `head()` shows you the first six rows of the data set. You can also call for more rows by using the argument `n=`. The function `str()` shows the structure of the data object. The function `summary()` will show the summary statistics. The `glimpse ()` function (requires you to load the `dplyr` package) is another way to see the the format and structure of the data. You can also get a view of the data set by clicking on the moth data object in the Environment tab, or using the code `View(moth)`. This will open up a temporary window to see the data where you can sort the observations etc., but be mindful of the size of the data file - with \> 10,000 observations it can take a while to open this view.
+
+You may find a favorite among these functions or other tools you discover. The goal is to make sure that the treatment variable is read as a categorical variable (chr, or fct), and both moth and parasitoid are integer values (num or dbl).
+
+Note: we will review the distinction between "chr" and "fct" in a later example.
+
+```{r}
+head(moth)
+head(moth, n = 10)
+str(moth)
+summary(moth)
+library(dplyr) # needed to use glimpse function
+glimpse(moth)
+
+apply (moth, 2, anyNA) # applies the anyNA function to the columns of the data set - 2 references the columns, 1 references the rows
+```
+
+We will now review an example when you need to change the structure or format of your data.
+
+## Data Management: Crop Data
+
+This fictitious data set measured yield at four locations that were arranged in an experimental design known as a randomized complete block design where there are four blocks each location, and each block is divided into six sub-blocks that have one of two density treatments (High/Low) and one of three fertilizer treatments (1: Control, 2: Company A, 3: Company B) randomly assigned to each sub-block. We will first load the data, and then review the structure and format of the variables to determine if any changes need to be made. We expect to see categorical variables for the location, block, density, and fertilizer variables, and continuous variable for the yield data.
+
+```{r}
+library(readxl) # needed to read excel files
+crop <- read_excel(here("data", "crop.xlsx"), sheet = "crop") # Excel files can have multiple sheets, make sure you reference the desired sheet when you read in the data file
+glimpse(crop)
+```
+
+When we review the structure of the crop data we see that location, block, and fertilizer are all dbl type variables. There are situations where you can consider the spatial arrangement of experimental units (i.e., blocks within locations) as a continuous variable - for example as GPS coordinates, but in this situation we are comparing them as categorical variables. Furthermore, if fertilizer was tested as increasing amounts of a fertilizer, then we may consider it as a continuous variable - the description specifically mentions a control group and two fertilizers from two separate companies, which would make this a categorical variable. We will use the `mutate` function from the `dplyr` package here to help change the location, block, and fertilizer variables to chr type variables.
+
+We are first setting up to rename the crop data object at the end of this set of code by using the backwards arrow. Then we are calling crop object and using the pipe function `%\>%` which means that the following line of code will be applied into the next line of code. The mutate function is creating a new variable called location_chr that is the same as the location variable but is a character type variable. We are repeating this process for the block and fertilizer variables. The `as.character()` function is used to change the variable to a character type.
+
+```{r}
+crop <- crop %>%
+  mutate(location_chr = as.character(location)) %>% 
+  mutate(block_chr = as.character(block)) %>%
+  mutate(fertilizer = as.character(fertilizer)) # naming over the original variable
+glimpse(crop)
+# the changes we made worked and the variables are now "chr" type variables as expected
+```
+
+After the data are loaded into RStudio and the structure of the data are confirmed to reflect the description of the data, the next step is to visualize the data. We will review an example of how to visualize the data using the `ggplot2` package.
+
+## Data Visualization: Crop Data
+
+When the data file has information about the experimental design that is relevant to the analysis, it can be helpful to produce a figure showing how treatment groups were assigned. The `desplot()` function from the `desplot` package is a useful tool for visualizing the experimental design of the data. The data object needs to have columns that identify the row and column of each plot in the trial. We will consider the locations to be the rows and the blocks to be the columns. The variables used for the rows and columns have to be numbers for the `desplot` function to work properly. That is why we created new variables rather than name over them above. The form argument fills the color of each experimental unit by the chosen variable - we will use the yield variable in this instance. Because yield is a continuous variable, each cell is colored based on the gradient of the yield values. We also added the density and fertilizer variables to the form argument to make panels for each density and fertilizer treatment combination. The text argument shows the yield values in each plot. The remaining arguments are, shortening the number of values printed for the text argument, the main title, and the key - which is turned off in this instance.
+
+```{r}
+library(desplot)
+desplot(data = crop,flip=TRUE, # Row 1 and Col 1 is top left when flip = TRUE
+        form = yield ~ location + block | density * fertilizer,
+        text = yield, cex = 1,shorten = "abb",
+        main = "Field Layout", show.key = F)
+```
+
+It is also a good idea to look at the arithmetic means, standard deviations, and counts for each density and fertilizer treatment combination. The `group_by` and `summarize` functions come from the `dplyr` package. We first group the data by the desired grouping variables, and then we summarize the variable of interest using a variety of descriptive statistics. This tool gives us further insight into the data beyond the basic `summary()` function used earlier.
+
+```{r}
+crop %>%
+  group_by(density,fertilizer) %>%
+  summarize(mean = mean(yield),
+            std.dev = sd(yield),
+            count = n(),
+            std.error = sd(yield) / sqrt(n()))
+```
+
+A simple plot of the raw data also helps to visualize the distribution of the yield for each treatment combination. We will use the `ggplot()` from the `ggplot2` package. This package has a language all of its own, and you can find a wide variety of plot types to represent your data. We will cover the basics, but I suggest you review this [resource](https://r-graph-gallery.com/ggplot2-package.html) or this [resource](https://ggplot2.tidyverse.org) to learn more.
+
+The ggplot begins with creating the graphic coordination space using the initial data set and the aesthetics (x and y axes) for the figure/graph. You can add a color variable to visualize different elements of the data. Any variables references in the initial aesthetics will be applied to the entire figure. If you want a color or some other format to apply to an individual element of the figure, then you should include those elements in that code only. Then you will add layers of geometry and annotations to the original figure/graph to produce the final image. The point geometry (`geom_point()`) produces a scatter plot. The `ylim` argument forced the y-axis to start at 0. The `theme_classic()` argument produces a clearer plot format.
+
+```{r}
+library(ggplot2)
+ggplot(data = crop,
+       aes(y = yield,x = fertilizer,color = density))+
+  geom_point()+
+  ylim(0,NA)+ # does this decision make sense??
+  theme_classic()
+```
+
+You can add several different annotations to the plot and change many elements of the plot to help visualize the data in more detail. There are ways to jitter the raw data so that you can see the individual data points. You can also change the transparency of the points so that you can emphasize other elements of the figure - such as other summary statistics like a box plot. Another powerful tool in creating complex figures uses the `facet_wrap` function where you create multiple panels from a categorical variable. There are times where you may want to change the labels of the axis or legend values or titles. You can also change the color of the different layers on the figure. The `cvdPlot` function from the `colorBlindness` package will produce a panel of figures based on the last plot that was made to see how people with different abilities to see color will interpret the figure.
+
+```{r}
+Fertilizer_labels <- c("Control","Company A","Company B") # this is a vector of the labels we want to use for the fertilizer variable
+
+ggplot(data = crop,
+       aes(y = yield,x = fertilizer,color = density))+
+  geom_point(position = position_jitterdodge(),alpha = 0.3)+
+  #geom_jitter() + # this is an alternative but it doesn't doge by group
+  geom_boxplot(outliers = F)+
+  facet_wrap(~ location)+
+  scale_x_discrete(labels = Fertilizer_labels)+
+  labs(title = "Yield by Fertilizer and Density",
+       x = "Fertilizer",
+       y = "Yield",
+       color = "Density", # this changes the legend title
+       tag = "A")+ 
+  theme_classic()
+
+library(colorBlindness)
+colorBlindness::cvdPlot() # will automatically run on the last plot you made
+```
+
+This helps us get an understanding of the range of the data and the distribution of the data before beginning the analysis.
+
+## Try it Yourself
+
+Now that we have covered important steps in loading the data, confirming the structure of the data, and visualizing the data, you will be given a practice data set to follow the steps above.
+
+Data published from (Mead et al. 1993) include trials of yield from four different melon varieties with six replicates or field plots. The allocation of the treatments (varieties) to the experimental units (plots) was completely at random - following a completely randomized design (CRD). We will cover different experimental designs when we discuss random effects models later in the seminar.
+
+The data set is called "Melon_data.csv" and is located in the "data" folder. We expect data set to have a categorical variable for the variety, a continuous variable for the yield data. There are also columns describing the rows and columns of the experimental units that can be used to help visualize the experimental design.
+
+You can either fill out the sections below or see the solutions in the "scripts" folder. Answer the questions after each section to test your understanding of the coding skills.
+
+#### Loading the data
+
+```{r}
+#library(readr)
+#library(here)
+Melons <- read_csv(here("data", "Melon_data.csv"), col_types = "cddd")
+```
+
+How many observations are included in this data set: 24 observations
+
+#### Reviewing the structure of the data
+
+```{r}
+glimpse(Melons)
+```
+
+What argument did you use to make sure the data was read in correctly: col_types = "cddd"
+
+#### Visualizing the data - Experimental Design
+
+```{r}
+#library(desplot)
+desplot(data = Melons,flip=TRUE,
+        form = yield ~ row + col,
+        text = variety, cex = 1,shorten = "no",
+        main = "Field Layout", show.key = F)
+# Can have plots colored by variety
+desplot(data = Melons,flip=TRUE,
+        form = variety ~ row + col,
+        text = variety, cex = 1,shorten = "no",
+        main = "Field Layout", show.key = F)
+```
+
+How many times does each variety appear in column 4? v1: 2, v2: 2, v3: 3, v4: 0 
+How many times does each variety appear in row 5? v1: 0, v2: 1, v3: 2, v4: 1
+
+#### Visualizing the data - Descriptive Statistics
+
+```{r}
+Melons %>%
+  group_by(variety) %>%
+  summarize(mean = mean(yield),
+            std.dev = sd(yield),
+            count = n(),
+            std.error = sd(yield) / sqrt(n()))
+```
+
+What is the mean yield for variety 1? 20.5 What is the standard deviation for variety 3? 5.56 What is the standard error for variety 4? 0.91
+
+#### Visualizing the data - Raw Data
+
+```{r}
+#library(ggplot2)
+ggplot(data = Melons,aes(y = yield,x = variety))+
+  geom_point()+
+  theme_classic()
+```
+
+How would you include the mean yield for each variety on the plot? You can use the summary statistics from the previous code chunk to add the mean yield for each variety to the plot.
+
+```{r}
+Variety_labels <- c("V_1","V_2","V_3","V_4") # this is a vector of the labels we want to use for the variety variable
+
+Melon_means <- Melons %>%
+  group_by(variety) %>%
+  summarize(mean = mean(yield),
+            std.dev = sd(yield),
+            count = n(),
+            std.error = sd(yield) / sqrt(n()))
+
+ggplot()+ # Move aesthetics to the geom_point function to allow for geom_errorbar to work
+  geom_point(data = Melons,aes(y = yield,x = variety),alpha = 0.3)+
+  geom_point(data = Melon_means, aes(x = variety, y = mean), col = 'red', size = 3, position = position_nudge(x = 0.1))+
+  geom_errorbar(data = Melon_means, aes(x = variety, ymin = mean - std.error, ymax = mean + std.error), width = 0.1, col = "red", position = position_nudge(x = 0.1))+
+  labs(x = "Variety", y = "Yield")+
+  scale_x_discrete(labels = Variety_labels)+
+  theme_classic()
+```
+
+There are many more skills you can learn to improve your data management and visualization skills. We will go over more of them in the next section as they relate to visualizing elements of the statistical analysis.

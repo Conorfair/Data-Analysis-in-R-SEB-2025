@@ -1,0 +1,401 @@
+---
+title:    "Data Analysis in R"
+subtitle: "Advanced Modeling Examples"
+author: "Conor Fair"
+date: "`r Sys.Date()`"
+output: html_document
+header-includes:
+  - \usepackage{titling}
+  - \pretitle{\begin{flushleft}}
+  - \posttitle{\end{flushleft}}
+editor_options: 
+  chunk_output_type: console
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Advanced Modeling Examples
+
+There are three types of advanced models I would like to cover that I believe that Entomologists either use often that has potential complications within the statistical analysis, or types of analyses that are rarely considered but that fit Entomological data very well.
+
+## Zero-Inflation
+
+When we discussed the webworm data we fit with a generalised linear model using a negative binomial distribution I made a note that there were several zeros observed that could be problematic for count models. This type of issue is known as zero-inflation. There is a specific type of mixture model that is used to model  data that meet these conditions, and you can review other [sources](https://www.highstat.com/index.php/books2?view=article&id=23&catid=18) to understand the theory behind these models. We will rather review the applied basics of diagnosing zero-inflation in data and discuss some simple steps to adapt your model to produce un-biased estimates.
+
+#### Loading the Data
+
+We will re-use the webworm data for this exercise
+
+```{r}
+library(readr)
+library(here)
+library(tidyverse)
+Webworms <- read_csv(here("data", "Overdispersion.csv"), col_types = "dddffff")
+str(Webworms)
+```
+
+#### Visualizing the Data
+
+```{r}
+ggplot(Webworms, aes(x = spray, y = y, fill = lead)) +
+  geom_violin(scale = "width", adjust = 2) + 
+  geom_point(position = position_jitterdodge(jitter.width = 0.5, jitter.height = 0.1, dodge.width = 0.8), alpha = 0.1) +
+  labs(x = "Spray Treatment", y = "Webworm Count", fill = "Lead Treatment") +
+  theme_classic()
+```
+
+Notice the clusters of zero observations for each spray and lead treatment combination. We initially fit a glm with a poisson distribution and determined that there was significant evidence of overdispersion. This is an important first step compared to testing for zero-inflation first. Zero-inflation can be mistaken for overdispersion. In the absence of overdispersion a glm fit with a poisson distribution can then be tested for zero-inflation. Furthermore, glm models fit with a negative binomial distribution can also have zero-inflation. 
+
+We will now fit the glm with a negative binomial distribution and test for zero-inflation.
+
+#### Fit Linear Model and Test Assumptions
+
+```{r}
+library(glmmTMB)
+library(DHARMa)
+mod_nb <- glmmTMB(y ~ spray * lead, data = Webworms, family = "nbinom2")
+
+testZeroInflation(mod_nb)
+```
+
+These results illustrate a crucial element about testing for zero-inflation. While a visual assessment of the raw data may suggest a potential for zero-inflation, you must test the number of observed zeros compared to the number of expected zeros given the model estimates.
+
+Here is an example of a data set that has zero-inflation.
+
+```{r}
+# You can load example data directly from a package
+data(Owls, package = "glmmTMB")
+
+owls_nb1 <- glmmTMB(SiblingNegotiation ~ FoodTreatment * SexParent +
+                                    (1|Nest) + offset(log(BroodSize)),
+              family = nbinom2(), data = Owls)
+
+testZeroInflation(owls_nb1)
+```
+
+Here we see a significant result from the `testZeroInflation()` function.
+
+Note: offset is another argument you can use with count models where you have an unequal level of effort used to observe the counts. In this scenario the probability of observing the response (i.e., sibling negotiation) is more likely when there is a larger brood size. So the log of the brood size is included as an offset term. The log of the brood size is used because the log is used as the link function for this model.
+
+## Hazard Models - Time-to-Event Models
+
+Once you recognize the characteristics of this type of data, you will be surprised how often you see it in entomology research. This type of model was originally developed in cancer research where they modeled how long it took for a death to occur. In many applied settings, especially with pest insects, data is collected on how long it takes for insects to die under various conditions. You can also model how long it takes for other events to occur - it doesn't always have to be death or event a seemingly "negative" outcome. You are modeling how long it takes for an event to occur.
+
+This example data looks at the survival of old and young birds. These data look at 50 individual birds.
+
+```{r}
+x <- "https://raw.githubusercontent.com/Conorfair/ENTO_8900/main/Duck%20survival.csv"
+Birdsurv <- read.csv(x)
+
+str(Birdsurv)
+Birdsurv$Age <- as.factor(Birdsurv$Age)
+Birdsurv$Age <- factor(Birdsurv$Age, levels = c("0", "1"), labels = c("Young", "Old"))
+table(Birdsurv$Age)
+str(Birdsurv)
+```
+
+Initial visualization of the data can be done using Kaplan-Meier curves. A simple look into these data compares the survival functions between age of birds
+
+```{r}
+library(survival)
+Surv_function_KM <- survfit(Surv(Time, Indicator) ~ Age, data = Birdsurv)
+plot(Surv_function_KM, xlab = "Time (days)", lty = c(2, 3), ylab = "Kaplan-Meier survival function", mark.time = TRUE)
+legend("topright", bty = "n", c("Old", "Young"), lty = 2:3)
+```
+
+Further analysis can be done using cox-proportional hazard models - where hazard models get their names.
+
+```{r}
+Birdsurvcox <- coxph(Surv(Time, Indicator) ~ Age, data = Birdsurv, model = TRUE)
+summary(Birdsurvcox)
+# Likelihood ratio test= 0.08 on 1 df, p=0.7804
+# Compares the fit of the model to the fit of the null model by estimating the ratio of their likelihoods (or difference in log likelihoods).
+# Wald test = 0.08 on 1 df, p=0.7786
+# Tests how far the estimated parameters are from zero.
+
+#Model's Predicted Survival Probabilities (Fig. 4C)
+Surv_function <- survfit(Birdsurvcox, newdata = data.frame(Age = c("Young", "Old")))$surv #survival function
+plot(survfit(Birdsurvcox, newdata = data.frame(Age = c("Young", "Old"))), lty = c(2,3), xlab = "Time (days)",
+     ylab = "Predicted survival probabilities", mark.time = TRUE)
+legend("topright", bty = "n", c("Young", "Old"), lty = 2:3)
+
+#Testing the proportional hazard assumption - assumption is not violated (chi^2=2.85,p=0.092)
+cox.zph(Birdsurvcox)
+```
+
+One of the major assumptions of the cox proportional hazard model is the proportional hazard assumption. The `cox.zph()` function tests this assumption. In the event that this assumption is violated you should review the help files or consider another model. Another consideration is the presence of ties in the order of when events occur. Again, review the help files to learn more about how to handle this issue. My goal is to present this type of analysis while also highlighting potential red flags that could come up.
+
+## Mixed Effects Models - Extension for Repeated Measures
+
+We discussed another assumption of linear models - the assumption that errors were independent. That is not always the case, and there can be many causes of this lack of independence. A common source comes from the experimental design and is also known as split-plot designs. In a split-plot design the randomization of a treatment level (sub-plot) is dependent on the level of another effect (whole-plot). Another scenario where there is a lack of independence is when you have repeated observations of experimental units. If you have plots where you are measuring insect activity multiple times (>2) throughout a period a time, then these observations are not independent and the assumptions of the linear model are violated. Both these issues can be addressed using mixed effects models.
+
+The specification of random effects in R follows a predictable syntax for related packages. The `glmmTMB` package is gaining popularity in ecology- and agriculture-related fields. Here is a [reference](https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html) for how to specify random effects along with other helpful guidelines for generalized linear mixed effects models.
+
+## Split-Plot Design - Multiple Random Intercepts
+
+#### Review the Experimental Design
+
+You may recognize this model structure from the examples used in the split-plot design lecture. 
+
+The data for this example is a slightly modified version of the yield (kg/ha) trial laid out as a split-plot design (Gomez & Gomez 1984). The trial had 4 genotypes (G), 6 nitrogen levels (N or n_amount) with 3 complete replicates (rep) and 6 incomplete blocks (mainplot) within each replicate.
+
+#### Importing the Data
+
+```{r}
+Split_plot <- read_csv(here("data", "Split_Plot_Design.csv"), col_types = "dddffffd")
+str(Split_plot)
+```
+
+#### Exploring the Data
+
+```{r}
+library(desplot)
+desplot(data = Split_plot,
+        form = rep ~ col + row | rep, # fill color per rep, headers per rep
+        text = G, cex = 1, shorten = "no", # show genotype names per plot
+        col = N, # color of genotype names for each N-level
+        out1 = mainplot, out1.gpar = list(col = "black"), # lines between mainplots
+        out2 = row, out2.gpar = list(col = "darkgrey"), # lines between rows
+                main = "Field Layout",show.key = T,key.cex = 0.7) # formatting
+```
+
+#### Fitting ANOVA Models with R and Assumptions
+
+```{r}
+mod_re <- lmerTest::lmer(yield ~ N * G + (1|rep) + (1|rep : mainplot), data = Split_plot) #(1|rep/mainplot) same syntax for lmer function - glmmTMB may produce different result
+#isSingular warning message tells us that one of the random effects is accounting for very little variation - since this random effect is related to the experimental design we will NOT ignore it
+summary(mod_re)
+plot(resid(mod_re) ~ fitted(mod_re))
+abline(h = 0)
+
+#Review contribution of each random effect and their predictors (BLUPs)
+summary(mod_re)$varcor
+ranef(mod_re)$rep
+ranef(mod_re)$`rep:mainplot`
+```
+
+#### Mean Comparisons and Data Visualization
+
+Here we have multiple random effects - replicate and mainplot within replicate. 
+
+```{r}
+library(emmeans)
+library(multcomp)
+mod_re %>% car::Anova(type = 3,test.statistic="F")
+
+withinG_mean_comparisons_tukey_re <- mod_re %>%
+  emmeans(specs = ~N | G) %>%
+  cld(Letters = letters, decreasing = TRUE)
+withinG_mean_comparisons_tukey_re
+
+withinG_mean_comparisons_tukey_re <- withinG_mean_comparisons_tukey_re %>%
+  as_tibble() %>%
+  mutate(N_G = paste0(N, "-", G)) %>%
+  mutate(N_G = fct_reorder(N_G, emmean))
+
+Split_plot <- Split_plot %>%
+  mutate(N_G = paste0(N, "-", G)) %>%
+  mutate(N_G = fct_relevel(N_G, levels(withinG_mean_comparisons_tukey_re$N_G)))
+
+withinG_RCBD_Plot_tukey <- ggplot() +
+  facet_wrap(~G, labeller = label_both) + #facet per G level
+  geom_point(data = Split_plot, aes(y = yield, x = N, color = N)) +
+  geom_point(data = withinG_mean_comparisons_tukey_re, aes(y = emmean, x = N), color = "red", position = position_nudge(x = 0.1)) +
+  geom_errorbar(data = withinG_mean_comparisons_tukey_re, aes(ymin = lower.CL, ymax = upper.CL, x = N), color = "red", width = 0.1, position = position_nudge(x = 0.1)) +
+  geom_text(data = withinG_mean_comparisons_tukey_re,aes(y = emmean, x = N, label = str_trim(.group)), color = "red", position=position_nudge(x = 0.2), hjust = 0) +
+  scale_y_continuous(name = "Yield", limits = c(0, NA), expand = expansion(mult = c(0,0.1))) +
+  scale_x_discrete(name = NULL) +
+  theme_classic() +
+labs(caption=str_wrap("Colored dots represent raw data. Red dots and error bars represent estimated marginal means ± 95% confidence interval per group. Means not sharing any letter are significantly different by the t-test at the 5% level of significance following p-value adjustment using Tukey HSD.", width = 120))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position = "bottom")
+withinG_RCBD_Plot_tukey
+
+ggsave(here("outputs", "Split_Plot.tiff"), withinG_RCBD_Plot_tukey, width = 20, height = 30, units = "cm", dpi = 300)
+```
+
+## Repeated Observations - Random Intercept for each Subject
+
+When working with data that has repeated observations you must contend with the lack of independence to produce unbiased estimates. One simple solution is to include a random intercept in the model for each individual or experimental unit that was observed in the study. This accounts for individual differences in the starting point of the response variable while analyzing repeated measurements from each subject.
+
+Note: when there is more complex dependencies of relatedness within the observations this approach may not suffice, and you may need to resort to modeling more complex covariance structures like auto-regressive order 1 (one of the more common options). Review this [source](https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html) that discuss time series analysis and covariance structures.
+
+#### Loading the Data
+
+In this example dataset eighteen patients participated in a study in which they were allowed only three hours of sleep per night and their reaction time in a specific test was observed. The underlying correlation structure results in observations from the same individual or subject should be more similar than observations between two individuals or subjects. An initial review of the dataset and random intercept model is tested.
+
+Reaction - average reaction time (ms)
+Days - number of days of sleep deprivation
+Subject - subject number on which the observation was made
+
+```{r}
+RO_Data <- read_csv(here("data", "Random_Slope_and_Intercept_Model.csv"), col_types = "ddf")
+str(RO_Data)
+```
+
+#### Visualizing the Data
+
+We can create a plot for each subject to understand the variation (or lack of independence) in the relationship between reaction time and the number of days each subject experiences sleep deprivation.
+
+```{r}
+ggplot(RO_Data, aes(y = Reaction, x = Days)) +
+    facet_wrap(~ Subject, ncol = 6) + 
+    geom_point() + 
+    geom_line()
+```
+
+Some lines seem more similar to others, but some a clearly unique. We will compare multiple models to determine how to best fit these data.
+
+#### Fit Linear Model and Test Assumptions
+
+```{r}
+library(lme4) # Used to fit mixed effects models - alternative and precursor to glmmTMB
+mod_intercept <- lmer(Reaction ~ Days + (1|Subject), data = RO_Data)
+
+#Review model assumptions
+plot(resid(mod_intercept) ~ fitted(mod_intercept)) #small hint of curved relationship
+abline(h = 0)
+
+# Using DHARMa residuals
+library(DHARMa)
+resid <- simulateResiduals(mod_intercept)
+plot(resid)
+```
+
+#### Interpret Model Results
+
+With mixed effects models you can assess the results from both the fixed effects portion of the model as well as the random effects portion.
+
+```{r}
+#Review contribution of each random effect and their predictors (BLUPs)
+summary(mod_intercept)$varcor
+ranef(mod_intercept)$Subject #unique baseline for each subject
+
+car::Anova(mod_intercept, test.statistic = "F") #Days is a continuous variable - summary table gives us the slope of the line
+summary(mod_intercept)
+# The output from the summary function given a mixed effects model doesn't give you the p-value, but you can calculate your self.
+
+# The first value is the t value from the model
+# The second value is the degrees of freedom for that estimate - the estimate for Days is the slope (1 degree of freedom)
+# lower.tail = FALSE provides the test that the given value (t value) is greater than zero (right tailed test).
+pt(13.02, 1, lower.tail = FALSE)
+```
+
+Each subject has their own baseline for reaction time and the subsequent measurements are relative to their baseline, so a random intercept will allow us to have each subject their unique baseline prediction. To visualize how well this model fits the data, we will plot the predicted values which are lines with y-intercepts that are equal to the sum of the fixed effect of intercept and the random intercept per subject. The slope for each patient is assumed to be the same and is 10.4673.
+
+#### Figure to Explain Results
+
+```{r}
+RO_Data <- RO_Data %>% 
+  mutate(yhat = predict(mod_intercept, re.form = ~(1|Subject))) #predict function calculated predictions based on model estimates and the re.form calculates the random intercepts
+ggplot(RO_Data, aes(y = Reaction, x = Days)) +
+    facet_wrap(~ Subject, ncol = 6) + 
+    geom_point() + 
+    geom_line() + #original lines from raw data
+    geom_line(aes(y = yhat), color = 'red') #predicted lines from yhat values
+```
+
+Some subjects have less deviation from their predicted lines, but this assumes each subject has the same slope. We can fit a model that allows for each subject to have their own slope as well as their own y-intercept. The random slope will be calculated as a fixed effect of slope plus a random offset from that.
+
+## Repeated Observations - Random Slope and Intercept
+
+#### Fit Linear Model and Test Assumptions
+
+```{r}
+mod_SI <- lmer(Reaction ~ Days + (1 + Days|Subject), data = RO_Data)
+
+#Review model assumptions
+plot(resid(mod_SI) ~ fitted(mod_SI)) #curved relationship is no longer - some extreme observations??
+abline(h=0)
+
+# Using DHARMa residuals
+library(DHARMa)
+resid <- simulateResiduals(mod_SI)
+plot(resid)
+
+```
+
+#### Interpret Model Restuls
+
+```{r}
+#Review contribution of each random effect and their predictors (BLUPs)
+summary(mod_SI)$varcor
+ranef(mod_SI)$Subject #unique baseline and slope for each subject
+
+car::Anova(mod_SI, test.statistic = "F") #Days is a continuous variable - summary table gives us the slope of the line
+summary(mod_SI) #estimate for slope (Days) doesn't change much
+```
+
+Review figure of each subject with their unique slope and intercept
+
+```{r}
+RO_Data <- RO_Data %>% 
+  mutate(yhat = predict(mod_SI, re.form = ~(1 + Days|Subject)))
+ggplot(RO_Data, aes(y = Reaction, x = Days)) +
+    facet_wrap(~ Subject, ncol = 6) + 
+    geom_point() + 
+    geom_line() +
+    geom_line(aes(y = yhat), color = 'red')
+```
+
+We have an eye-ball test that tells us the random slope and intercept prediction lines fit the data better. We can employ a formal test to compare the fitness of each model (random intercept and random slope+intercept).
+
+```{r}
+anova(mod_intercept, mod_SI)
+```
+
+The lower AIC and BIC values and the higher (less negative) log-likelihood value tells us that the random slope and intercept model is a better model than just a random intercept model.
+
+We can review the results from the better fitting model with first the population estimate for the relationship between Days and Reaction time. Then the estimates for each subject.
+
+```{r}
+RO_Data <- RO_Data %>% 
+  mutate(yhat = predict(mod_SI, re.form = ~0))
+ggplot(RO_Data, aes(x = Days, y = yhat)) +
+  geom_point(aes(x = Days,y = Reaction)) +
+  geom_line(color='red') + 
+  ylab('Reaction') +
+  ggtitle('Population Estimated Regression Curve') +
+  scale_x_continuous(breaks = seq(0,9, by = 2))
+
+
+RO_Data <- RO_Data %>% 
+  mutate(yhat.ind = predict(mod_SI, re.form = ~(1 + Days|Subject)))
+ggplot(RO_Data, aes(x = Days)) +
+  geom_line(aes(y = yhat), linewidth = 3) + 
+  geom_line(aes(y = yhat.ind, group = Subject), color = 'red') +
+  scale_x_continuous(breaks = seq(0,9, by = 2)) +
+  ylab('Reaction') +
+  ggtitle('Person-to-Person Variation')
+```
+
+The final step in producing a figure that explains the relationship would be to incorporate confidence intervals around the predicted relationship. A familiar approach to produce confidence intervals around prediction line uses the predict function again. This approach may be easier to include other variables from more complex models. Those terms can be added to the expand.grid function.
+
+```{r}
+#Find range of values for new body size range
+min.days <- min(RO_Data$Days)
+max.days <- max(RO_Data$Days)
+#New x data
+new.x <- expand.grid(Days = seq(min.days, max.days, length = 1000), Subject = levels(RO_Data$Subject))
+#Generate fits and standard errors at new.x values
+new.y <- predict(mod_SI, newdata = new.x, se.fit = TRUE, re.form = NA)
+new.y <- data.frame(new.y)
+#housekeeping to put new.x and new.y together
+addThese <- data.frame(new.x, new.y)
+addThese <- rename(addThese, Reaction = fit)
+#Add confidence intervals
+addThese <- mutate(addThese, lwr = Reaction - 1.96 * se.fit,
+                          upr = Reaction + 1.96 * se.fit)
+#See how the confidence intervals match the raw data
+ggplot(RO_Data, aes(x = Days, y = Reaction)) +
+  geom_point(size = 3, alpha = 0.5) +
+  geom_smooth(data = addThese, aes(ymin = lwr, ymax = upr), stat = "identity") +
+  theme_classic()
+```
+

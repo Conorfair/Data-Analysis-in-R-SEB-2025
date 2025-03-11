@@ -1,0 +1,415 @@
+---
+title:    "Data Analysis in R"
+subtitle: "Generalised Linear Models"
+author: "Conor Fair"
+date: "`r Sys.Date()`"
+output: html_document
+header-includes:
+  - \usepackage{titling}
+  - \pretitle{\begin{flushleft}}
+  - \posttitle{\end{flushleft}}
+editor_options: 
+  chunk_output_type: console
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Generalised Linear Models
+
+One of the assumptions of linear models is that the residuals are normally distributed. This assumption is often violated with certain types of data that are bounded at particular values or are discrete values. Count data (integers) are a perfect example of data that is both bounded and discrete. Historically count data had been log or square root transformed and fit assuming it met the assumption of normally distributed residuals. This can work in some cases, but it has the potential to create nonsensical predictions like negative counts. 
+
+An alternative modeling approach is increasingly encouraged in introductory statistics and data analysis courses - generalised linear models. Rather than spend too much time here going into the math and statistics behind this approach, we are going to focus on the application of this tool and cover how to use the appropriate code. There are helpful resources that can explain the math and theory behind this approach including this online [book](https://statistics4ecologists-v3.netlify.app/10-maximumlikelihood#sec-intromle) by John Fieberg at the University of Minnesota.
+
+The generalised linear model is similar to the linear model in that both models have the data - dependent variable (y), the independent variables (x), the estimates of the relationship between the independent and dependent variables (known as beta estimates) and an error component. The additional component for the generalised linear model is the link function which allows for the data in the model to be bounded and have changes in the variance - violations of assumptions from the linear model. The link function will appear as a specific argument in the `glm()` function we will use to fit a generalised linear model.
+
+## Count Data in R
+
+The first example data set we will use data that came from a trial of different insecticide applications and the observed number of insects after the insecticides had been applied. The four sprays A, B, C, and F are the focus of this analysis and are filtered from the original data set.
+
+#### Loading the Data
+
+```{r}
+library(readr)
+library(here)
+library(tidyverse)
+Counts <- read_csv(here("data", "Count_Model.csv"), col_types = "df")
+str(Counts)
+
+# Filter only the A, B, C, and F insecticides 
+Counts <- Counts %>%
+  filter(spray == 'A' | spray == 'B' | spray == 'C' | spray == 'F') %>%
+  droplevels()
+```
+
+Filtering out the over levels of insecticides (spray) can be done using the `filter()` function, but the other levels are kept within the history of the Counts object until you use the `droplevels()` function.
+
+#### Visualizing the Data
+
+```{r}
+ggplot(Counts,aes(x = spray, y = count)) +
+  geom_boxplot(width = 0.5) +
+  geom_jitter(height = 0, width = 0.1, size = 3, pch = 21) +
+  labs(x = "Spray Treatment Type", y = "Count") +
+  theme_classic() +
+  theme(axis.title = element_text(face = "bold", size = 15),
+        axis.text = element_text(face = "bold", size = 15))
+```
+
+We included more design elements in ggplot when visualizing your data. The `geom_jitter()` function allows you to shift either the height or width of the points to prevent the individual points from being plotted on top of each other. The size and point shape is also adjusted. Lastly the axis title and text is modified in the `theme()` function to make the text larger and bold faced font. This highlights another layer of modifications that you can make to the aesthetics of these plots.
+
+#### Formulate Hypotheses
+
+From here we can formulate the question and hypothesis: is there variation in the number of insects observed among the different insecticide applications?
+
+Null hypothesis: there is no variation in the number of insects observed among the different insecticide applications
+Alternative hypothesis: there is at least one difference in the number of insects observed between the different insecticide applications
+
+#### Fit Linear Model and Test Assumptions
+
+We are going to illustrate the differences between fitting a linear model on count data, log-transformed count data, and a generalised linear model with the log-link function and an assumed Poisson distribution. 
+
+```{r}
+mod_lm <- lm(count ~ spray, data = Counts)
+
+# mod_log <- lm(log(count) ~ spray, data = Counts) log of zero is undefined
+# log1p adds 1 to each integer value so log(1) is zero
+
+mod_log <- lm(log1p(count) ~ spray, data = Counts)
+mod_glm <- glm(count ~ spray, family = poisson(link = log), data = Counts)
+
+library(performance)
+check_model(mod_lm, detrend = F)
+check_model(mod_log, detrend = F)
+check_model(mod_glm, detrend = F)
+```
+
+Comparing the residuals among the three different models we see considerable improvements in the homogeneity of variance and normally distributed residual plots for the glm model.
+
+You may have noticed an additional graph from the `check_model()` output where we were checking the assumptions of the count model fit with a poisson distribution and a link function. Zero-inflation is a potential issue with count models (among others), and we will briefly discuss this during the Advanced Modeling Example section.
+
+#### Interpret Model Results
+
+```{r}
+car::Anova(mod_glm, test.statistic = "F") # type doesn't matter here
+# We need to include a new argument to request for the F statistic
+summary(mod_glm)
+# Estimate for spray c
+exp(2.67415-1.94018)
+```
+
+We refute the null hypothesis that there is no variation in the number of insects observed among the different insecticide applications (F (3,44) = 35.832, p value < 0.001). Because the GLM uses the link function the model results are reported on the scale of the link function - the log scale in this case. The inverse of the log link function is the `exp()` function. For categorical variables it is easier to look at the estimated marginal means as there is an argument to report the inverse link response data.
+
+#### Figure to Explain Results
+
+The additional argument `type = "response"` produces the estimated marginal means on the original scale using the inverse function of the link function used in the model. We used the log link function in this model.
+
+The calculation of the "rate" or estimated marginal mean count and the upper and lower 95% confidence intervals are calculated correctly, but the standard error is not. We will use the `expand.grid()` and `predict()` functions to produce the same data as the `emmeans()` function, but we have to use the inverse link function to calculate the standard errors correctly. The `emmeans()` standard errors are replicated by using the `type = response` in the `predict()` function rather than using the inverse link function after the standard errors are calculated from the `predict()` function.
+
+```{r}
+library(emmeans)
+library(multcomp)
+# This approach can be used if you want to report the mean and 95% confidence intervals
+
+emmeans_glm <- mod_glm %>%
+  emmeans(specs = "spray", type = "response")%>%
+  cld(Letters = letters, decreasing = TRUE) %>%
+  as_tibble()
+
+SprayNew_response = factor(c("A", "B", "C", "F"))
+dataPredict_response <- expand.grid(spray = SprayNew_response)
+predictions_response <- predict(mod_glm, newdata = dataPredict_response, se.fit = TRUE, type = "response")
+predictions_response <- as.data.frame(predictions_response)
+NewData_response <- cbind(dataPredict_response,predictions_response)
+head(NewData_response)
+
+# Use this approach if you want to report mean and standard error
+
+SprayNew = factor(c("A", "B", "C", "F"))
+dataPredict <- expand.grid(spray = SprayNew)
+predictions <- predict(mod_glm, newdata = dataPredict, se.fit = TRUE)
+predictions <- as.data.frame(predictions)
+NewData <- cbind(dataPredict,predictions)
+NewData$UI <- exp(NewData$fit + (1.96*NewData$se.fit))
+NewData$LI <- exp(NewData$fit - (1.96*NewData$se.fit))
+NewData$se.fit <- exp(NewData$se.fit)
+NewData$fit <- exp(NewData$fit)
+
+# Arrange rows by decreasing values of fit to match emmeans_glm object so that cld groups are attached in the correct order
+
+NewData <- NewData %>%
+  arrange(-fit)
+
+# Attach cld groups to NewData object for figure
+
+NewData <- cbind(NewData, emmeans_glm[,7])
+
+Plot_glm <- ggplot() +
+  geom_point(data = Counts, aes(y = count, x = spray), position = position_jitter(width = 0.1)) +
+  geom_boxplot(data = Counts, aes(y = count, x = spray), position = position_nudge(x = -0.25), width = 0.25) +
+  geom_point(data = NewData, aes(y = fit, x = spray), position = position_nudge(x = 0.15), size = 2, color = "red") +
+  geom_errorbar(data = NewData, aes(ymin = fit - se.fit, ymax = fit + se.fit, x = spray), position = position_nudge(x = 0.15), color = "red", width = 0.1) +
+  geom_text(data = NewData, aes(y = fit, x = spray, label = str_trim(.group)), position = position_nudge(x = 0.25), color = "black", angle = 0) + 
+  labs(y = "Counts \u00B1(SE)", x = "Insecticide Treatment") +
+  theme_classic()
+Plot_glm
+
+ggsave(here("outputs", "Count_Model.tiff"), Plot_glm, width = 20, height = 15, units = "cm", dpi = 300)
+```
+
+This figure required a few more steps to ensure that we reported the correct standard errors along with the estimated means. You saw a few more functions to help manipulate the data to achieve this (e.g., `arrange()`).
+
+Count models fit with a poisson distribution have an assumptions that the mean and variance are equal. This is not always the case, and when the variance is greater than the mean it is known as overdispersion. The presence of overdispersion can produce biased standard errors and impact the interpretation of your results. We will now review the procedures to test for overdispersion and means to address overdispersion, when present.
+
+## Overdispersion in Count Data
+
+Testing for overdispersion begins with fitting a generalised linear model with a poisson distribution. We will use the data set `beall.webworms` from the `agridat` package. The researchers observed counts of webworms in a beet field with four different insecticide treatments. 
+
+#### Loading the Data
+
+```{r}
+Webworms <- read_csv(here("data", "Overdispersion.csv"), col_types = "dddffff")
+str(Webworms)
+```
+
+#### Visualizing the Data
+
+```{r}
+ggplot(Webworms, aes(x = spray, y = y, fill = lead)) +
+  geom_violin(scale = "width", adjust = 2) + 
+  geom_point(position = position_jitterdodge(jitter.width = 0.5, jitter.height = 0.1, dodge.width = 0.8), alpha = 0.1) +
+  labs(x = "Spray Treatment", y = "Webworm Count", fill = "Lead Treatment") +
+  theme_classic()
+```
+
+#### Formulate Hypotheses
+
+Since the four treatments are coded as the presence or absence of both the spray and lead treatments there will need to be an interaction with the spray and lead terms.
+
+Question: is there variation in the number of webworms observed among the different treatment combinations?
+
+Null hypothesis: there is no variation in the number of webworms observed between the spray or lead treatments
+Alternative hypothesis: there is at least one difference in the number of observed webworms between the different spray and/or lead treatments.
+
+#### Fit Linear Model and Test Assumptions
+
+```{r}
+mod_webworms <- glm(y ~ spray * lead, family = poisson(link = log), data = Webworms)
+
+check_model(mod_webworms, detrend = F)
+check_overdispersion(mod_webworms)
+```
+
+The assumptions of the residuals for this model look good, but there is a different function to test for overdispersion from the `performance` package. The dispersion ratio is an estimate of the amount of overdispersion in the model fit with poisson distribution. There is a test statistic you can report as evidence for overdispersion.
+
+The next step is to account or model for this increased variance the poisson distribution cannot handle. Another distribution - the negative binomial distribution estimates another parameter (theta) as by how much larger is the variance than the mean. We can use the function `glm.nb()` from the `MASS` package or the `glmmTMB()` function from the `DHARMa` package. Since the `glmmTMB()` function has many more uses - including some of what we will discuss in the Advanced Modeling section - this is the function we will be using.
+
+#### Re-fit Model to Account for Overdispersion
+
+```{r}
+library(glmmTMB)
+mod_nb <- glmmTMB(y ~ spray * lead, data = Webworms, family = "nbinom2")
+
+check_model(mod_nb, detrend = F)
+
+library(DHARMa)
+resid <- simulateResiduals(mod_nb)
+plot(resid)
+```
+
+Note: there are other families similar to "nbinom2" you may see in the help page for glmmTMB, but they have minor differences. This is the recommended family for most count models with overdispersion.
+
+Another approach to assess the residuals of a model is with the simulated quantile residuals with the `simulateResiduals()` function from the `DHARMa` package. The QQ plot and homogeneity of variance plots are interpreted similarly as the plots from the `check_model()` output. These plots are more difficult to interpret with small sample sizes and should be interpreted cautiously. 
+
+#### Interpret Model Results
+
+```{r}
+summary(mod_nb)
+#car::Anova(mod_nb, test.statistic = "F")
+# F statistics are unavailable with models fit with glmmTMB - Wald chisquare tests perform similar tests
+car::Anova(mod_nb)
+```
+
+The interaction between spray and lead is not significant at alpha = 0.05. We can review the estimated marginal means to better understand the differences between the treatment groups.
+
+#### Figure to Explain Results
+
+```{r}
+emmeans_nb <- mod_nb %>%
+  emmeans(~ spray * lead, type = "response")%>%
+  cld(Letters = letters, decreasing = TRUE) %>%
+  as_tibble()
+
+data_treatment <- expand.grid(spray = levels(Webworms$spray), lead = levels(Webworms$lead))
+
+worm_predictions <- predict(mod_nb, newdata = data_treatment, se.fit = TRUE)
+worm_predictions <- as.data.frame(worm_predictions)
+New_Worms <- cbind(data_treatment,worm_predictions)
+New_Worms$UI <- exp(New_Worms$fit + (1.96*New_Worms$se.fit))
+New_Worms$LI <- exp(New_Worms$fit - (1.96*New_Worms$se.fit))
+New_Worms$se.fit <- exp(New_Worms$se.fit)
+New_Worms$fit <- exp(New_Worms$fit)
+
+# Arrange rows by decreasing values of fit to match emmeans_glm object so that cld groups are attached in the correct order
+New_Worms <- New_Worms %>%
+  arrange(-fit)
+
+# Attach cld groups to New_Worms object for figure - 8th column
+New_Worms <- cbind(New_Worms, emmeans_nb[,8])
+
+# Rename Lead to be capitalized for facet wrap label
+Webworms <- rename(Webworms, Lead = lead)
+New_Worms <- rename(New_Worms, Lead = lead)
+
+Plot_NB<-ggplot() +
+  geom_point(data = Webworms, aes(y = y, x = spray), position = position_jitter(width = 0.1)) +
+  facet_wrap(~ Lead, labeller = label_both) +
+  geom_boxplot(data = Webworms, aes(y = y, x = spray), position = position_nudge(x = -0.3), width = 0.25) +
+  geom_point(data =New_Worms, aes(y = fit, x = spray), position = position_nudge(x = 0.2), size = 2, color = "red") +
+  geom_errorbar(data = New_Worms, aes(ymin = LI, ymax = UI, x = spray), position = position_nudge(x = 0.2), color = "red", width = 0.1) +
+  geom_text(data = New_Worms, aes(y = fit, x = spray, label = str_trim(.group)), position = position_nudge(x = 0.3), color = "black", angle = 0) + 
+labs(x = "Spray Treatment", y = "Webworm Count \u00B1(SE)", fill = "Lead Treatment") +
+  theme_classic()
+Plot_NB
+
+ggsave(here("outputs", "Overdispersion_Model.tiff"), Plot_NB, width = 20, height = 15, units = "cm", dpi = 300)
+```
+
+Here the results from the Anova table indicate that the two-way interaction is not significant with the alpha level of 0.05, but the follow up analysis from the post-hoc comparisons show significant differences between each pair of spray and lead treatment combination. Because these tests are overall simpler (i.e., comparing only two treatment groups) it can detect differences that might be obfuscated by the test statistic from the Anova table.
+
+Notes: these data have a large number of observed zeros, which can create a problem for count models. This problem is known as zero-inflation, and we will briefly discuss this problem in the Advanced Modeling section. 
+
+## Logistic Regression
+
+Another type of data that is bounded and commonly fails to meet the assumptions of normally distributed residuals is binomial data - 0, or 1 coded response (y) data. These data are often reported at proportions coming from a number of success out of a known number of trials. Similar to the count models above, there are times where certain transformations may approximate normally distributed residuals, but there is still the chance that nonsensical predictions can be made (e.g., proportions that exceed 1.0 etc.).
+
+The distributional family used in a GLM for these data is known at the binomial distribution, and the link function for the binomial distribution is commonly chosen to be the logit link. 
+
+## Binomial Data in R
+
+The example dataset we will use to demonstrate this type of analysis follows the study of 800 observations among two pepper fields documenting the presence or absence of Phytophtera disease. The response variable is the presence or absence of the disease, and the independent variables are field and soil moisture percent we will be reviewing to determine if they impact the probability of the disease being observed.
+
+#### Loading the Data
+
+```{r}
+Phytophtera <- read_csv(here("data", "Logistic_Regression.csv"), col_types = "ffffdd")
+str(Phytophtera)
+Phytophtera$disease_num <- if_else(Phytophtera$disease == "Y", 1, 0)
+str(Phytophtera)
+Phytophtera <- subset(Phytophtera, !is.na(water))
+```
+
+The response variable - disease is coded as "Y" or "N" for the presence or absence of the disease, but the model requires numerical values. The `if_else()` function is creating a 1 for any "Y" response and a 0 for any "N" response in the disease variable and creating a new variable named disease_num.
+
+#### Visualizing the Data
+
+```{r}
+ggplot(Phytophtera, aes(x = water, y = disease_num, color = field)) +
+  geom_point() +
+  theme_classic()
+
+ggplot(Phytophtera, aes(x = water, y = disease_num, color = field)) +
+  geom_jitter(height = 0.1) +
+  theme_classic()
+```
+
+You can see the real value in using the `geom_jitter()` function to better see the individual points that is otherwise obscured when using the `geom_point()` function. Based on this figure we may see some difference in the probability of observing the disease along the gradient of soil moisture percent (water) and that this maybe different between the two fields. This leads us to testing an interaction effect.
+
+#### Fomulate Hypotheses
+
+Question: is there a relationship between the soil moisture and the probability of the disease being observed, and is this relationship the same for each field?
+
+Null hypothesis: there is no variation in the probability of observing the disease jointly along the gradient of soil moisture and between fields
+Alternative hypothesis: there is some variation in the probability of observing the disease jointly along the gradient of soil moisture and between fields
+
+#### Fit Linear Model and Test Assumptions
+
+```{r}
+mod_binomial <- glm(disease_num ~ field * water, data = Phytophtera, family = binomial(link = "logit"))
+
+# Inverse link for the chosen link function of the model - used for transforming predictions later
+ilink <- family(mod_binomial)$linkinv
+
+check_model(mod_binomial, detrend = F)
+
+resid <- simulateResiduals(mod_binomial)
+plot(resid)
+```
+
+The residuals from the `check_model()` function can be more difficult to interpret for assessing homogeneity of residuals. The simulated quantile residuals from the `DHARMa` package are easier to read. All assumptions appear to be satisfied.
+
+#### Interpret Model Results
+
+```{r}
+car::Anova(mod_binomial, test.statistic = "F", type = 3)
+summary(mod_binomial)
+```
+
+Similar to the summary results from the count model the estimates are on the link scale (logit) this is known as the log odds, which is difficult to interpret. By using the inverse link function 
+
+#### Figure to Explain Results
+
+```{r}
+pdat <- expand.grid(water = seq(min(Phytophtera$water), max(Phytophtera$water), length.out = 1000), field = levels(Phytophtera$field))
+
+pred <- predict(mod_binomial, newdata = pdat, type = "link", se.fit = TRUE)
+pdat <- cbind(pred,pdat)
+# Inverse link function from earlier
+pdat <- pdat %>%
+  mutate(fitted = ilink(fit),
+         upper = ilink(fit + (1.96 * se.fit)),
+         lower = ilink(fit - (1.96 * se.fit)))
+
+# Rename Field to be capitalized for facet wrap label
+Phytophtera <- rename(Phytophtera, Field = field)
+pdat <- rename(pdat, Field = field)
+
+
+Plot_logit <- ggplot(Phytophtera, aes(x = water, y = disease_num)) +
+  facet_wrap(~ Field, labeller = label_both) +
+  geom_ribbon(data = pdat,
+              aes(ymin = lower, ymax = upper, x = water),
+              alpha = 0.2, inherit.aes = FALSE) +
+  geom_point() +
+  geom_line(data = pdat, aes(y = fitted, x = water)) +
+  labs(x = "Soil Moisture %", y = "Probability of Observing Disease") +
+  theme_classic()
+
+ggsave(here("outputs", "Logistic_Model.tiff"), Plot_logit, width = 20, height = 15, units = "cm", dpi = 300)
+
+emmeans_binomial <- mod_binomial %>%
+  emtrends(~ field, var = "water") %>%
+  cld(Letters = letters, decreasing = TRUE)
+```
+
+The resutls from this model can be interpreted as such:
+
+The null hypothesis that there is no variation in the probability of observing the disease jointly along the gradient of soil moisture and between fields was refuted (F (1, 787) = 35.4549, p value < 0.001). The comparison of the estimated marginal means of linear trends using the `emtrends` function in the `emmeans` package (Lenth 2025) demonstrated that the slope estimate for the effect of soil moisture on the probability of observing the disease in Field 2 was significantly different from the slope in Field 1. Furthermore, the slope estimate for the relationship between soil moisture and the probability of observing the disease in Field 1 was not significantly different from zero.
+
+
+
+
+
+
+The data set is called "Split_Plot_Design.csv" and is located in the "data" folder. These data come from (Gomez & Gomez 1984) and measure the rice yield (kg/ha) of four varieties (G) that are exposed to one of six nitrogen treatments (N) following a split-plot design. The nitrogen treatments are applied at the main plot level and the four varieties are randomly 
+
+The data set is a split-plot design where the main plot is divided into sub-plots. The main plot has two treatments (A and B) and the sub-plots have three treatments (1, 2, and 3). The data set has a categorical variable for the main plot treatment, a categorical variable for the sub-plot treatment, and a continuous variable for the yield data. The data set has 60 observations.
+
+
+
+
+```{r}
+library(desplot)
+grays <- colorRampPalette(c("white","#252525"))
+desplot(Webworms, y ~ col*row|spray,
+        col.regions=grays(10),
+        at=0:10-0.5,
+        out1=block, out2=trt, num=trt, flip=TRUE, # aspect unknown
+        main="beall.webworms (count of worms)")
+```

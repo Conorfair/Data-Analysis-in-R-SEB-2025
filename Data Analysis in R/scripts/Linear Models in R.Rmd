@@ -1,0 +1,920 @@
+---
+title: "Data Analysis in R"
+subtitle: "Linear Models in R"
+author: "Conor Fair"
+date: "Mar-11-2025"
+output: html_document
+header-includes:
+  - \usepackage{titling}
+  - \pretitle{\begin{flushleft}}
+  - \posttitle{\end{flushleft}}
+editor_options: 
+  chunk_output_type: console
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Linear Models
+
+The simple linear model is a statistical model that assumes a linear relationship between the input/x/independent variable and the output/y/dependent variable. Most of the data you will work with will include a model that has one numerical y variable. Where the messy part comes in is how the characteristics of the x variables determine the type of model you have and the types of statistical tests you will make. If you have one categorical variable that have two categories (levels) that is known as a t-test. 
+
+## Running a t-test in R
+
+Let's take another look at the fictitious crop data. We will focus on one x variable from the data (e.g., density) and how it impacts the y variable (yield). 
+
+```{r}
+library(readxl)
+library(here)
+crop <- read_excel(here("data", "crop.xlsx"), sheet = "crop")
+library(dplyr)
+glimpse(crop)
+```
+
+We need to make sure the data are loaded correctly - since a t-test is used with a categorical x variable we are set with how the density variable is coded (chr).
+
+We will now visualize the data to better understand what is going on - good to get in the habit. This also helps guide the language for our question: Is there a difference in yield between the high and low density treatments? We can formulate a null and alternative hypothesis for this question:
+
+Null: there is no difference in the yield between the high and low density treatments
+Alternative: there is a difference in the yield between the high and low density treatments
+
+```{r}
+library(ggplot2)
+ggplot(crop, aes(x=density, y = yield))+
+  geom_boxplot()+
+  theme_classic()
+```
+
+Now that we have the null and alternative hypotheses and a better understanding of the data we can move onto the actual statistical test. The code is relatively straight-forward. 
+
+```{r}
+t.test(yield ~ density, data = crop)
+```
+
+We would interpret the results following this example language: 
+
+"The null hypothesis that there was no difference in the yield between the high and low density treatments was refuted (t = 4.4062, df = 86.618, p-value = 0.00002999)." 
+
+It is important to report the test statistic, degrees of freedom and p-value together - each piece of information is meaningless without the other. This is only the statistical interpretation of the results. I would also encourage you to report the effect size in the context of which the data were collected. Such language could look like this: 
+
+"The difference in yield between the high and low density treatments was 5.5661 with a 95% confidence interval of 3.055142 to 8.077103."
+
+The inclusion of the 95% confidence interval provides some useful context to say that the true effect (difference between high and low density) has a 95% chance of being between those values.
+
+There are important variations of the t-test that you can review if you are interested:  
+
+- One-Sample t-test: compare the mean response to a known value  
+- Two-Sample t-test for equal variance: the `t.test()` function assumes unequal variance that you can set using `var.equal=TRUE` if the variance between levels of the categorical variable is equal (as determined by the `leveneTest()` or other methods)  
+- Paired t-test: compare difference between means of two related or paired observations (e.g., pre- and post-treatment measurement)
+
+## ANOVA in R
+
+#### Loading the Data
+
+When you increase the number of levels in a categorical variable beyond two, then the type of linear model you are fitting is known as an ANOVA. From the crop data set we have another categorical variable that has more than two levels - fertilizer, but it is not coded as a categorical variable (chr).
+
+```{r}
+crop <- crop %>%
+  mutate(fertilizer = as.character(fertilizer))
+```
+
+#### Visualizing the Data and the Experimental Design/Hypotheses
+
+Visualizing the data once again will help us understand the data and write our question and hypotheses.
+
+Question: Is there a difference in yield among the different fertilizer treatments?
+Null hypothesis: there is no difference in the yield among the different fertilizer treatments.
+Alternative hypothesis: there is at least one difference among the different fertilizer treatments.
+
+```{r}
+crop %>%
+  group_by(fertilizer) %>%
+  summarize(mean = mean(yield),
+            std.dev = sd(yield),
+            count = n(),
+            std.error = sd(yield) / sqrt(n()))
+
+ggplot(crop, aes(x=fertilizer, y = yield))+
+  geom_boxplot()+
+  theme_classic()
+```
+
+#### Fit Linear Model and Test Assumptions
+
+These hypotheses tell us what specific results we are looking for from the statistical test. The function we use is aptly named `lm()` (linear model). Similar to the t-test there are assumptions that need to be tested in order to place confidence in the results from the model. When these assumptions are violated there is a chance that the estimated effects and/or standard errors can be biased which can lead to wrong claims both in terms of the biological and statistical interpretation.
+
+- Assumptions of Linear Regression:
+  - Linear relationship between x and y (**)
+  - Errors (residuals) are normally distributed (*)
+  - Errors have constant variance "Homoscedasticity" (*)
+  - Errors are independent: this comes from how the experiment was designed (**)
+  - No outliers (+) 
+  - No perfect multicollinearity (-)
+  - No error in the explanatory variables (.)
+
+(**): major concern that needs to be addressed - consider other modeling options (e.g., mixed effects models, quadratic terms, generalized additive models, etc.)  
+(*): test statistics and confidence intervals are less reliable - consider glms to resolve issues  
+(+): will produce biased estimates - consider sensitivity analysis  
+(-): rare to have "perfect" multicollinearity  
+(.): hard to control - best practice is to be transparent in presenting doubts/caveats about interpretations of your results
+
+To assess these assumptions we use various visual and statistical tools. Once you have ran a model, you can test if the model residuals have met the assumptions. The `plot()` function will create multiple plots of residuals to illustrate the relationship between fitted values/quantiles and the residuals. The Residuals vs Fitted plot will look for linear relationship between fitted values and residuals, but the line through the cloud of points should be flat. The Q-Q Residuals plot assesses distribution of the residuals, and they are said to follow a normal distribution if the points follow the dashed line. The Residuals vs Fitted and Scale-Location plots can both be used to assess the constant variance assumption, and the spread of the points should be equal across the fitted values (each group) if they are to be assumed to be homoscedastic. The Leverage plot is used to test for outliers, and points that fall outside of cook's distance (usually marked on the plot) are identified as potential outliers. The `performance` package also has the `check_model()` function that produces similar plots, and the details for this function can be found in the help file `?check_model`.
+
+One major consideration with these visual tools is that they loose their usefulness when dealing with small sample sizes. If you are uncertain in your interpretation of the figures, there are related statistical tests that can help make a determination for if the assumptions are violated.
+
+```{r}
+model <- lm(yield ~ fertilizer, data = crop)
+
+#plot(model) # you have to hit enter in the console to cycle through each plot
+
+par(mfrow = c(2,2)) # creates a 2x2 arrangement of plots
+plot(model)
+
+par(mfrow = c(1,1)) # returns to default settings of plot window
+
+library(performance)
+check_model(model, detrend = F)
+```
+
+These are some of the tests available when the visualization methods above are inconclusive.
+
+```{r}
+# Test for normally distributed residuals
+shapiro.test(residuals(model)) # test the residuals from the model - not the model or raw data
+
+#Tests for homogeneity of variance
+car::leveneTest(model)
+car::ncvTest(model)
+
+#Test for outliers
+car::outlierTest(model)
+```
+
+The general approach should be to interpret the residuals from the model for each assumption and attempt to resolve one (if any) violated assumption at a time, then re-fit the model and re-assess the assumptions. These are fictitious data, but we will review this process with real data so you get an idea of how to interpret these plots. We will move forward with the analysis with this example data for now.
+
+#### Interpret Model Results
+
+There are multiple pieces of statistical information that you can gather from the model output. The `summary()` function will produce output that lists the model formula, descriptive statistics of the residuals, table of model coefficients, and other statistics about the overall model fit. The `anova()` function will produce output that reports the F statistic and other results from the ANOVA table. There is another related function `Anova()` from the `car` package that will allow you to extract different output based on more complex models (interactions or unequal replication experimental designs). For this simple model, both functions produce the same output.
+
+```{r}
+summary(model)
+anova(model)
+car::Anova(model)
+```
+
+When deciding what statistics to report, you need to consider the specific language of your alternative hypothesis: "there is at least one difference among the different fertilizer treatments". This asks if there is significant variation explained among the different levels for the fertilizer explanatory variable. The output from the `summary()` function compares each level of fertilizer to the `(Intercept)` or reference level of the categorical variable (fertilizer1). This is not in line with the language of your hypothesis, so it isn't the right statistics to report. The output from the `anova()` function tests if the variance between group means is significantly larger than the variability within each group, and given the significant result, there is a significant difference among the groups tested. This statistical result matches the language of the hypothesis, and therefore should be reported! The null hypothesis that there was no difference among the different fertilizer treatments was refuted (F(2,93) = 4.8446, p-value = 0.009967). The F statistic is reported along with the two degrees of freedom (numerator and denominator from the ANOVA table) along with the p-value.
+
+#### Follow up Analyses and Figure to Explain Results
+
+Often additional comparisons are made after an analysis is made - these are called post-hoc comparisons. This step can assess the difference between the different levels of the different categorical variables. For each comparison made there are p-value adjustments that are made to account for the increased false-positive rate when you have multiple simultaneous tests. The most common example you may have heard of is the Tukey HSD. If you have planned comparisons before the data are collected, then you can use orthogonal contrasts to compare groups and properly adjust the p-values using Tukey HSD or some other tool. 
+
+To produce these post-hoc comparisons, the `emmeans()` function from the `emmeans` package and the `cld()` function from the `multcomp` package are used in tandem to identify which pairwise treatment groups are significantly different from each other. This code can then be used in combination with ggplot to produce an informative figure that includes the raw data, mean estimates from the model, and evidence of statistically significant differences.
+
+```{r}
+library(emmeans)
+library(multcomp)
+library(stringr)
+crop_means <- emmeans(model, ~ fertilizer)%>% # calculates the estimated marginal means
+  cld(Letters = letters, decreasing = TRUE)%>% # produces compact letter display
+  as_tibble() # changes crop_means to tibble data object to be read into ggplot
+
+# Create a vector of labels for fertilizer labels - different from how the data are coded in crop
+Fertilizer_Labels <- c("Control", "Fertilizer A", "Fertilizer B")
+
+fertilizer_plot <- ggplot()+
+  geom_point(data = crop, aes(x = fertilizer, y = yield))+
+  geom_point(data = crop_means, aes(x = fertilizer, y = emmean), col = "red", size = 3, position = position_nudge(x = 0.1))+
+  geom_errorbar(data = crop_means, aes(x = fertilizer, ymin = emmean - SE, ymax = emmean + SE), width = 0.1, col = "red", position = position_nudge(x = 0.1))+
+  geom_text(data = crop_means, aes(x = fertilizer, y = emmean, label=str_trim(.group)), position = position_nudge(x=0.2))+ # adds the labels from the cld function to indicate which groups are significantly different
+  labs(x = "Fertilizer", y = "Mean Yield (kg) \u00B1(SE)")+ # "\u00B1" is code that produces the plus/minus symbol
+  scale_x_discrete(labels = Fertilizer_Labels)+
+  theme_classic()
+```
+
+We have included a few additional pieces of code to produce a more informative figure. The estimated marginal means are the same as the arithmetic means as calculated above, but the standard errors are different since they are calculated from the pooled variance from the model rather than the individual group variances. The labels for the x and y axes have also been modified to reflect more information. Lastly the letters from the compact letter display function help to interpret which levels are significantly different from each other. When we look at the output before the tibble object is made we see the following message, "If two or more means share the same grouping symbol, then we cannot show them to be different. But we also did not show them to be the same." These figures will often have language in a caption that will look something like this, "Groups with different letters indicate significant differences (alpha = 0.05)." The alpha level tells the reader that the threshold for significance is set at 0.05 - which is a common norm. Lastly the cld output tells us that the p value adjustment was made using the "tukey method for comparing a family of 3 estimates." This information should be reported in the language that describes the statistical analysis. Example language would look like this, "To test the null hypothesis that there are no differences in yield among levels of fertilizer, a linear model was fit with the independent variable of fertilizer and dependent variable of yield. Results from the the ANOVA table and the F statistic are used to test the hypothesis. Additional post-hoc comparisons using the emmeans function from the emmeans package (Lenth 2025) and the cld function from the multcomp package (Hothorn et al. 2008) using the tukey hsd post-hoc p-value adjustment show which levels are significantly different from each other. Data analyis and visualization was completed using R version 4.4.2 'Pile of Leaves' (R Core Team 2024)."
+
+There is room for your own voice in writing these sections of your manuscripts, but pay attention to the details that are crucial that ensure your audience understand what was done and that your analysis could be replicated if needed. Also, make sure to include the citations for the R software you use and the packages. There is a lot of effort that goes into the development and maintenance of these tools, and that effort deserves recognition.
+
+When you have multiple categorical x variables that is known as a two-way ANOVA. There are some additional considerations to make with this analysis.
+
+## Two-Way ANOVA
+
+#### Loading the Data
+
+These data come from a classic data set used in many introductory data analysis seminars. These data show the body mass in grams among different penguin species on different islands and between sexes of penguins. There are other variables recorded that could be analyzed, but we will be focusing on the species, sex, and body mass (g) of the penguins for now.
+
+Note: These data aren't related to entomology, but it isn't a big stretch to apply the comparisons in body mass between species and sexes of an organism. This translation of the type of data from an example data set to your own data is a valuable skill, and by getting better at recognizing similarities between the example data set and your own, you will improve your ability to use other resources to help with your own data analysis.
+
+```{r}
+library(readr)
+Penguins <- read_csv(here("data", "Two_Way_ANOVA.csv"), col_types = "ccddddcc")
+str(Penguins)
+
+# Remove NAs within the sex variable
+Penguins <- subset(Penguins, !is.na(sex))
+```
+
+We confirmed the coding of each variable is correct - species and sex are categorical and body mass (g) is continuous. 
+
+#### Visualizing the Data
+
+Initial steps to understand the data to better write our question(s) and hypotheses. We will visualize the data before writing the questions and hypotheses. 
+
+```{r}
+Penguin_Means <- Penguins %>%
+  group_by(species,sex)%>%
+  summarize(mean_mass = mean(body_mass_g),
+            std.dev = sd(body_mass_g),
+            count = n(),
+            std.error = sd(body_mass_g)/sqrt(n()))
+
+ggplot(Penguins, aes(x = species, y = body_mass_g, col = sex, group = sex))+
+  geom_point(aes(group = sex), position = position_dodge(width = 0.5), alpha = 0.4)+
+  geom_point(data = Penguin_Means, aes(x = species, y = mean_mass, col = sex, group = sex), size = 4, position = position_dodge(width = 0.5))+
+  labs(x = "Species", y = "Body Mass (g)", color = "Sex")+
+  scale_color_brewer(labels = c("Female","Male"), palette = "Dark2")+
+  theme_classic()
+
+colorBlindness::cvdPlot()
+```
+
+We used a few more data visualization tools to make this figure. The `position` argument in the `geom_point()` functions dodge the points by the grouping variable (sex). We used the function `scale_color_brewer()` to change the labels and color palette for the legend. You can read the help page for this function to learn more about what it can do - it is a great tool to choose color palettes that consider how people with different abilities see color
+
+#### Formulate Hypotheses
+
+After reviewing the plot we can see the different types of data and how that leads into the types of questions that can be asked with the data.
+
+Given the following three questions, write the null and alternative hypotheses.
+
+Question 1: is there a difference in body mass in grams among the different species of penguins?
+
+Null hypothesis:
+Alternative hypothesis:
+
+Question 2: is there a difference in body mass in grams among the different sexes of penguins?
+
+Null hypothesis:
+Alternative hypothesis:
+
+Question 3: is the difference in body mass in grams between species the same for each sex of penguins?
+
+Null hypothesis:
+Alternative hypothesis:
+
+By including multiple terms in the model, this quickly complicates the analyses you can test.
+
+#### Fit Linear Model and Test Assumptions
+
+```{r}
+Mod_Penguin <- lm(body_mass_g ~ species * sex, data = Penguins)
+```
+
+After fitting the model the assumptions should be reviewed prior to interpreting the results.
+
+```{r}
+par(mfrow = c(2,2)) # creates a 2x2 arrangement of plots
+plot(Mod_Penguin)
+
+library(performance)
+check_model(Mod_Penguin, detrend = F)
+```
+
+These results look good - normally distributed residuals, homoscedatiscity, and linear trend in residuals. We can now move onto interpreting the results from the model. The `summary()` function produces the parameter estimates, but the interpretation of these estimates doesn't perfectly align with the above hypothesis - we will come back to this. The `anova()` and `Anova()` function from the `stats` and `car` package produce output from the Anova table, but there are some (at times) critical differences between these two functions. Specifically, when you have unbalanced replication (missing values) or an interaction term in your model, you should use the `Anova()` function to produce the type III sums of squares. This [link](https://www.r-bloggers.com/2011/03/anova-–-type-iiiiii-ss-explained/#:~:text=The%20anova%20and%20aov%20functions%20in%20R%20implement%20a%20sequential,levels%20of%20the%20other%20factor.) can provide more details for your reference. 
+
+#### Interpret Model Results
+
+```{r}
+anova(Mod_Penguin)
+car::Anova(Mod_Penguin)
+car::Anova(Mod_Penguin, type = 2)
+car::Anova(Mod_Penguin, type = 3)
+summary(Mod_Penguin)
+```
+
+The results from the Anova table tells us that the inclusion of the interaction term of species and sex explains a significant amount of variation. It doesn't say which levels are significantly different. 
+
+The results from the tables of coefficients that is produced from the `summary()` function show an estimate for the `(Intercept)` two species, one sex, and then two species:sex combinations. These estimates follow the default treatment coding that R does behind the scenes when you include multiple categorical variables in a model. The interpretation of these estimates is that the `(Intercept)` refers to the reference level of each categorical variable (species:Adelie, sex:female). Every other estimate is the change in the response compared to this reference level. For example: The estimated body mass for the average female Adelie penguin is 3,368.84 (g), and the estimated body mass for the average female Gentoo penguin is 4,679.75 (`3386.84+1310.91`). When you consider the interaction effect the estimated body mass for the average male Chinstrap penguin is 3,780.61 (`3386.84+674.66-262.89`).
+
+To look further into the individual levels of each variable we can use the estimated marginal means functions and post-hoc comparisons tests we used before with some minor modifications. 
+
+#### Follow up Analyses and Figure to Explain Results
+
+After we confirmed that the interaction effect of the model was significant we can use the `emmeans()` function to produce unbiased estimates. The rejection of the null hypothesis that body mass is the same across the species and sexes suggests that there is a difference among the levels of one variable across the other variable.
+
+When you have a significant interaction effect you shouldn't analyze the main effects independently since their interpretation is dependent on the other effect. This means that we want to include both terms from the interaction term in the `emmeans()` function. The `emmeans()` function produces the estimated marginal mean, SE, df, lower and upper confidence interval for each species and sex. The `cld()` function used in conjunction with the `emmeans()` function will produce a compact letter display of all pair-wise comparisons. You can adjust the default setting (from FALSE to TRUE) to show each pairwise comparison and include the decreasing argument if you want the largest estimated marginal mean to be listed first.
+
+When you have an interaction effect you want to test pair-wise comparisons there is some additional coding options. The first set of comparisons shown includes all possible comparisons with every species and sex combination tested (15 total comparisons). The other option shows nested comparisons where species are compared within each level of sex. 
+
+Note: The selection of these comparisons should be driven by your hypotheses and what makes theoretical sense. These decisions should ideally be made during or soon after the experimental design stage. You don't want the presence or absence of a significant effect here to inform your decisions.
+
+```{r}
+Mod_Penguin%>%
+emmeans(~species : sex)
+
+Mod_Penguin%>%
+emmeans(~species : sex)%>%
+  cld(Letters = letters, details = TRUE)
+
+All_means_Penguins <- Mod_Penguin %>%
+  emmeans(~species : sex) %>%
+  cld(Letters = letters, decreasing = TRUE) %>%
+  as_tibble()
+
+Within_means_Penguins <- Mod_Penguin %>%
+  emmeans(~species | sex) %>%
+  cld(Letters = letters, decreasing = TRUE) %>%
+  as_tibble()
+```
+
+After you have chosen which method best reflects what matches your hypothesis and/or theory, you can modify the cld object into a tibble, which is much easier to use with `ggplot()` and make an informative figure.
+
+```{r}
+library(ggpp) # allows for the additional position option position_dodgenudge
+Plot_All_Means_Penguins<-ggplot() +
+  geom_point(data = Penguins, aes(y = body_mass_g, x = species, color = sex), position = position_dodgenudge(width = 0.9, x = 0)) + 
+  geom_boxplot(data = Penguins, aes(y = body_mass_g, x = species, color = sex), width = 0.25, position = position_dodgenudge(width = 0.5, x = 0)) +
+  geom_point(data = All_means_Penguins, aes(y = emmean, x = species, group = sex), position = position_dodgenudge(width = 0.5, x = 0), size = 2,color = "red") +
+  geom_errorbar(data = All_means_Penguins, aes(ymin = lower.CL, ymax = upper.CL, x = species, group = sex), position = position_dodgenudge(width = 0.5, x = 0), color = "red", width = 0.1) +
+  geom_text(data = All_means_Penguins, aes(y = emmean, x = species, group = sex, label = str_trim(.group)), color = "black", position = position_dodgenudge(width = 1.2, x = -0.025), hjust = 0) +
+  labs(y = "Body Mass (g)", x = "Species", color = "Sex") +
+  scale_color_brewer(labels = c("Female", "Male"), palette = "Dark2") +
+  theme_classic()
+
+colorBlindness::cvdPlot()
+
+Plot_Within_Means_Penguins<-ggplot() +
+  facet_wrap(~sex, labeller = label_both) +
+  geom_point(data = Penguins, aes(y = body_mass_g, x = species, color = species)) + 
+  geom_boxplot(data = Penguins, aes(y = body_mass_g, x = species, color = species), width = 0.25, position = position_nudge(x = 0.2)) +
+  geom_point(data = Within_means_Penguins, aes(y = emmean, x = species), position = position_nudge(x = 0.2), size = 2,color = "red") +
+  geom_errorbar(data = Within_means_Penguins, aes(ymin = lower.CL, ymax = upper.CL, x = species), position = position_nudge(x = 0.2), color = "red", width = 0.1) +
+  geom_text(data = Within_means_Penguins, aes(y = emmean, x = species, label = str_trim(.group)), color = "black", position = position_nudge(x = 0.4), hjust = 0) +
+  labs(y = "Body Mass (g)", x = "Species", color = "Species") +
+  scale_color_brewer(palette = "Dark2") +
+  theme_classic()
+
+# Use the ggsave and here functions to save these plots in the "outputs" folder
+# The shell of these functions are provided, but you need to include the appropriate arguments in the right sequence
+
+#ggsave(here(),)
+#ggsave(here(),)
+```
+
+Both output are incorporated into their respective figures. The first figure shows all pair-wise comparisons, and the second shows the comparisons among species within each sex. The `position = posiiton_dodgenudge` argument is useful in the first figure to both dodge and nudge the elements of the figure. The `facet_wrap()` function is useful in the second figure to produce multiple figures for each level of another factor variable - this function is very powerful in creating complex arrangements of figures and is worth researching further if you are interested `?facet_wrap`.
+
+These figures shows a lot of information: raw data, box plots (interquartile range and median), and estimated marginal means with their associated pair-wise comparisons based on t-tests with corrected p-values. You often see some of the following language include in a caption of these figures to describe the interpretation of the different letters, "Different letters indicate significant differences at P <= 0.05 as determined by multiple comparisons tests using the Tukey HSD method for adjusting the experiment-wise error rate."
+
+When you have a continuous x variable, then you are still working with a linear model, but the interpretation of the results is a little different.
+
+## Simple Linear Regression
+
+When you have one or more independent variables in the linear model that are all continuous that is known as linear regression. Simple linear regression has one independent variable, and multiple linear regression has multiple independent variables.
+
+#### Loading the Data
+
+Data from (Kniss et al. 2012) shows the sugar yield of sugar beet in response to volunteer corn density. The response variable is sucrose production in pounds per acre (LbsSucA), and the independent variable is volunteer corn density in plants per foot of row.
+
+```{r}
+library(readr)
+Beets <- read_csv(here("data", "Simple_Linear_Regression.csv"), col_types = "cdd")
+str(Beets)
+summary(Beets)
+```
+
+The data are coded correctly - both Density and LbsSucA are numerical (continuous) variables, and the Loc (location) variable has no variation - we will ignore it. Since there is no categorical variable of interest the `summary()` output gives us the descriptive statistics. A figure to visualize the data is still a helpful tool.
+
+#### Visualizing the Data and the Experimental Design
+
+```{r}
+ggplot(Beets, aes(x = Density, y = LbsSucA))+
+  geom_point()+
+  ylim(0,NA)+
+  theme_classic()
+
+# Does it make sense to report yield in units of pounds/acre?
+# Might be a meaningful unit for the field.
+# Can change to other unit
+
+Beets <- Beets%>%
+  mutate(KgSucA = LbsSucA*0.453592)
+
+ggplot(Beets, aes(x = Density, y = KgSucA))+
+  geom_point()+
+  ylim(0,NA)+
+  labs(y = "Kg Sucrose/Acre")+
+  theme_classic()
+```
+
+#### Formulate Hypotheses
+
+From here we can formulate the question and hypothesis: does the density of volunteer corn density affect the yield of sugar beet?
+
+Null hypothesis: there is no effect of density on sugar beet yield
+Alternative hypothesis: there is an effect of density on sugar beet yield
+
+#### Fit Linear Model and Test Assumptions
+
+Now we will fit the model, test assumptions, and discuss what statistics should be reported to address this set of hypotheses.
+
+```{r}
+model_beets <- lm(LbsSucA ~ Density, data = Beets)
+library(performance)
+check_model(model_beets, detrend = F)
+
+anova(model_beets)
+summary(model_beets)
+
+# Write the analogous code to fit and assess a linear model for Kg Sucrose per Acre as the response (y) variable and Density as the explanatory (x) variable.
+
+# Changing the response variable will affect the estimates, standard errors, sums of squares, and mean squares, but not the test statistics
+```
+
+#### Interpret Model Results
+
+Regardless of which unit you choose to report, the output from the ANOVA table tells you that the effect of Density has a significant effect on sugar beet yield. "The null hypothesis that there is no effect of density on sugar beet yield was refuted (F(1,22) = 13.374, p-value = 0.001387)." There is more information in the summary output in the interpretation of the estimate. The interpretation of these estimates usually follow this language, "for a one unit change in Density, there is a resultant decrease of 9,364.3 Kg of sugar beet yield (t = 3.657, df = 1, p-value = 0.00139)." The sign of the t statistic tells you the direction of the relationship, so you only need to report the absolute value. For a continuous variable there is only one degree of freedom. Then, don't forget to include the p-value. 
+
+Now the scale of the Density variable doesn't include a one-unit change, and a decrease of over 9,000 kg is over twice the maximum yield observed. We could divide every value in that sentence by ten since that would be within the observed range. "For a 0.1 unit change in Density, there is a resultant decrease of 936.43 Kg of sugar beet yield..."
+
+#### Figure to Explain Results
+
+Now we can create a figure that incorporates the results from the model with the visualization of the data. When you have a continuous variable the `predict()` function from the `stats` package can be used to predict values from the model.
+
+```{r}
+# Create new data - sequence of Density values from min to max
+NewData <- expand.grid(Density = seq(min(Beets$Density),max(Beets$Density), length.out = 1000))
+# Create predicted values of yield from model using new data
+yhat <- as.data.frame(predict(model_beets, newdata = NewData, se.fit = T))
+# Combine the two data sets
+NewData <- cbind(NewData,yhat)
+# Another way to rename the fit variable
+NewData$KgSucA <- NewData$fit
+
+head(NewData)
+
+Beet_plot <- ggplot()+
+  geom_point(data = Beets, aes(x = Density, y = KgSucA))+
+  geom_line(data = NewData, aes(x=Density, y = KgSucA), col = "blue")+
+  geom_ribbon(data = NewData, aes(x=Density, ymin = KgSucA - se.fit, ymax = KgSucA + se.fit), fill = "blue", alpha = 0.3)+
+  theme_classic()
+
+ggsave(here("outputs", "Beet_plot.tiff"), Beet_plot, width = 20, height = 15, units = "cm", dpi = 300)
+```
+
+Lastly, we can save the image produced in the plot tab using the `ggsave()` function in combination with the `here()` function. The image file will be saved in the "outputs" folder and named "Beet_plot.tiff" with a width of 20 cm, height of 15 cm, and resolution of 300 dpi. These settings can be changed to fit sizing and resolution preferences or limitations for presentations and/or manuscripts.
+
+We mentioned the possibility of having multiple independent variables in a linear model - multiple linear regression. When you have a mixture of continuous and categorical variables in the same linear model that is also known as ANCOVA (analysis of covariance). We will go over some of the specifics of how to formulate, test, and visualize these hypotheses.
+
+## ANCOVA in R
+
+#### Loading the Data
+
+```{r}
+Ancova <- read_csv(here("data", "ANCOVA.csv"))
+head(Ancova)
+
+Ancova <- Ancova %>%
+  mutate(loc = as.factor(loc))
+```
+
+We confirmed that each variable is the correct type of variable - density and yield are continuous, and location is categorical. We added additional code where we changed location from a character type variable to a factor type variable. This will be necessary for the final analysis and figures we make. The main difference between a character and factor type variable is that certain functions work with factor variables only not with character variables, and that with a factor variable you are able to set the order of the variables. This is valuable if you want to change which variable is the reference variable - this was discussed in the two-way anova example.
+
+#### Visualizing the Data and the Experimental Design
+
+The dataset contains the results from a onion trial that tested the effect of planting density (plants per square meter) at two locations (Purnong Landing or Virginia). There is no information regarding the spatial arrangement of the fields other than the two locations, so there is no opportunity or need to use the `desplot()` function.
+
+```{r}
+library(ggtext)
+ggplot(Ancova, aes(x = density, y = yield, group = loc, col = loc)) +
+  geom_point() +
+  labs(x = expression(paste("Planting Density/m"^"2")), y = "Yield", col = "Location") +
+  theme_classic()
+```
+
+We included another useful modification to ggplot labels using the `expression()` function. This allows you to use mathematical expressions in text arguments. This example allowed us to use a superscript in the x-axis label. The specific syntax is an additional set of quotation marks around the mathematical symbol, which was the exponent symbol "^" in this example.
+
+#### Formulate Hypotheses
+
+From the graph made above we see a negative relationship between planting density and yield. There is also two different locations and the negative relationship seems to be shared across both locations. We can test this hypothesis for both the negative relationship and see if the relationship is different between locations. Furthermore, we notice the shape of the relationship might not be exactly straight. We can fit a polynomial term or possibly a logarithmic term for the effect of density to see if that fits better than a linear relationship.
+
+Remember that testing if the slope of these two lines are the same includes an interaction term in the model. It is important to develop these hypotheses prior to analyzing the data so that the presence or absence of a significant result doesn't influence the type of analysis you perform. This is akin to p-hacking behaviors, which is considered unethical, and should be avoided.
+
+#### Fit Linear Model and test Assumptions
+
+```{r}
+Model_linear <- lm(yield ~ density * loc, data = Ancova, contrasts = list(loc = contr.sum))
+
+check_model(Model_linear, detrend = F)
+
+Model_log <- lm(yield ~ log(density) * loc, data = Ancova, contrasts = list(loc = contr.sum))
+
+check_model(Model_log, detrend = F)
+
+Model_power <- lm(yield ~ poly(density, 2) * loc, data = Ancova, contrasts = list(loc = contr.sum))
+
+check_model(Model_power, detrend = F)
+```
+
+Improvements to the linearity graph are noticeable comparing both the log and power models to the linear model. Outliers and normality of residuals look fine for all models. Collinearity is going to be higher in the presence of an interaction term - take with a grain of salt. The homogeneity of variance figure is best with power model, but not terrible for log model.
+
+#### Interpret Model Results
+
+```{r}
+summary(Model_linear)
+summary(Model_log)
+summary(Model_power)
+
+car::Anova(Model_linear, type = 3)
+car::Anova(Model_log, type = 3)
+car::Anova(Model_power, type = 3)
+
+car::Anova(Model_linear, type = 2)
+car::Anova(Model_log, type = 2)
+car::Anova(Model_power, type = 2)
+```
+
+All models fail to refute the null hypothesis that the relationship between density and yield is different between the two locations. Given the lack of a significant interaction the type II sums of squares provides a more powerful test. There is strong evidence for differences between the two locations and a negative relationship between density and yield. We will now discuss how to address the choice between which model to use for reporting final model results.
+
+#### Model seleciton
+
+There are multiple options to use when determining which model should be used to report estimates for the slope and intercepts - which model has the best fit. Comparing similar models fit with the same data but different terms using the `anova()` function (lower case a) will compare the residual sums of squares and produce an F statistic if there are different degrees of freedom - comparing the power model to either the linear or log model. Another function from the `performance` package `compare_performance()` will allow you to compare several model fit statistics from a list of multiple models. For these linear models that are fit with the `lm()` function the adjusted R squared root mean squared error (RMSE) and sigma are more commonly used for model selection. Terms like AIC, AICc, and BIC are used with other types of models like generalized linear models (glm) that are estimated using a likelihood function. We will address these models in the next section.
+
+```{r}
+anova(Model_linear, Model_power)
+
+compare_performance(Model_linear, Model_log, Model_power)
+```
+
+Based on the interpretation of the model fit statistics, the log model fits the data better. We will produce figures that use estimates from each model to demonstrate visually why and how the log model fits best.
+
+#### Follow up Analyses and Figure to Explain Results
+
+When you have multiple variables in your model and you want to make predictions from the model, you need to make sure that each term is included in the `expand.grid()` function. Here we will create a sequence of density values across the minimum and maximum for both levels of location (remember that categorical variable need to be factors to work within `expand.grid()` function).
+
+```{r}
+# Create new data - sequence of Density values from min to max and over both levels of location variable
+NewData <- expand.grid(density = seq(min(Ancova$density), max(Ancova$density), length.out = 1000), loc = levels(Ancova$loc))
+
+# Create predicted values of yield with standard errors from model using new data
+yhat <- as.data.frame(predict(Model_log, newdata = NewData, se.fit = T))
+# Combine the two data sets
+NewData <- cbind(NewData,yhat)
+# Another way to rename the fit variable
+NewData$yield <- NewData$fit
+
+head(NewData)
+
+Ancova_Log_plot <- ggplot()+
+  geom_point(data = Ancova, aes(x = density, y = yield, col = loc))+
+  geom_line(data = NewData, aes(x=density, y = yield, col = loc))+
+  geom_ribbon(data = NewData, aes(x=density, ymin = yield - se.fit, ymax = yield + se.fit, fill = loc), alpha = 0.3)+
+  labs(x = expression(paste("Planting Density/m"^"2")), y = "Yield") +
+  guides(fill = guide_legend(title="Location"), color = guide_legend(title = "Location"))+
+  scale_color_brewer(labels = c("P", "V"), palette = "Dark2") +
+  scale_fill_brewer(labels = c("P", "V"), palette = "Dark2") +
+  theme_classic()
+
+ggsave(here("outputs", "Ancova_log_plot.tiff"), Ancova_Log_plot, width = 20, height = 15, units = "cm", dpi = 300)
+```
+
+Another way to modify the legend title using the `guides()` function. Since both the color and fill arguments are used among the different geometries layered in the plot there needs to be arguments for both in the `guides()` function. In this instance they are the same, but that may not always be the case. This is where increasingly complex figures can be put to use.
+
+Now we will produce the output for the linear and power models to compare among the three models.
+
+```{r}
+# Repeat the above process for the linear and power models
+# Create the NewData object, predictions, combine the two sets of data, and then a plot that display the data.
+
+# This code is one way to combine multiple plots into one figure
+
+library(patchwork)
+
+# Ancova_Comparison_plot <- Ancova_Linear_plot/Ancova_Log_plot/Ancova_Power_plot
+
+# ggsave(here("outputs", "Ancova_Comparison_plot.tiff"), Ancova_Comparison_plot, width = 20, height = 40, units = "cm", dpi = 300)
+
+```
+
+The `patchwork` library allows you to create composite plots using mathematical operators. The division symbols here puts each plot on top of the next plot, where the addition symbol would put the next plot to the left. There are other packages that use different approaches to combine multiple plots like the `gridExtra` and `cowplot` packages. You can review the specific functions and arguments for these packages in the help files.
+
+The interpretation of these results from the `Anova()` and the `summary()` output from the log model are as follows:
+
+We fail to reject the null hypothesis that the effect of log(density) on the yield equal across locations (F (1, 80) = 2.7632, p value = 0.1004). We reject the null hypothesis that the average yield is equal across locations (F (1, 80) = 96.6693, p value < 0.001). We reject the null hypothesis that there is no effect of density on yield (t = 27.142, df = 1, p value < 0.001). We can use the `emmeans()` function to estimate a value of yield for particular combinations of density and location parameters. These combinations of parameters can be chosen based on values of interest related to the experiment or sub-field.
+
+```{r}
+emmeans::emmeans(Model_log, 
+                 specs = ~ density * loc, 
+                 at=list(density=c(75,125), loc = c("P","V")), # Specify values
+                 type='response') 
+```
+
+## Multiple Linear Regression
+
+Now we will increase the complexity by including more than two independent (x) variables in the model and review how this impacts the steps in the analysis.
+
+#### Loading the Data
+
+We are going to use the Penguins data again for this exercise. For now we will ignore the year variable - this will be covered as a part of the advanced modeling examples section.
+
+```{r}
+Penguins <- read_csv(here("data", "Two_Way_ANOVA.csv"), col_types = "ffddddff") # We can change the col_types to factors (f) instead of characters (c)
+str(Penguins)
+
+# Remove NAs within the sex variable
+Penguins <- subset(Penguins, !is.na(sex))
+head(Penguins)
+```
+
+The data are loaded correctly and of the approriate type.
+
+#### Visualizing the Data
+
+We can look at each of the variables individually and in pairs to determine which variables may impact the response (y) variable - body mass (g).
+
+```{r}
+Penguin_Means_species <- Penguins %>%
+  group_by(species)%>%
+  summarize(mean_mass = mean(body_mass_g),
+            std.dev = sd(body_mass_g),
+            count = n(),
+            std.error = sd(body_mass_g)/sqrt(n()))
+
+Penguin_Means_sex <- Penguins %>%
+  group_by(sex)%>%
+  summarize(mean_mass = mean(body_mass_g),
+            std.dev = sd(body_mass_g),
+            count = n(),
+            std.error = sd(body_mass_g)/sqrt(n()))
+
+Penguin_Means_island <- Penguins %>%
+  group_by(island)%>%
+  summarize(mean_mass = mean(body_mass_g),
+            std.dev = sd(body_mass_g),
+            count = n(),
+            std.error = sd(body_mass_g)/sqrt(n()))
+
+Penguin_Means_species_sex <- Penguins %>%
+  group_by(species,sex)%>%
+  summarize(mean_mass = mean(body_mass_g),
+            std.dev = sd(body_mass_g),
+            count = n(),
+            std.error = sd(body_mass_g)/sqrt(n()))
+
+Penguin_Means_species_island <- Penguins %>%
+  group_by(species,island)%>%
+  summarize(mean_mass = mean(body_mass_g),
+            std.dev = sd(body_mass_g),
+            count = n(),
+            std.error = sd(body_mass_g)/sqrt(n()))
+
+Penguin_Means_island_sex <- Penguins %>%
+  group_by(island,sex)%>%
+  summarize(mean_mass = mean(body_mass_g),
+            std.dev = sd(body_mass_g),
+            count = n(),
+            std.error = sd(body_mass_g)/sqrt(n()))
+
+Species_Plot <- ggplot(Penguins, aes(x = species, y = body_mass_g, col = species))+
+  geom_point(alpha = 0.4)+
+  geom_point(data = Penguin_Means_species, aes(x = species, y = mean_mass), size = 4)+
+  labs(x = "Species", y = "Body Mass (g)")+
+  scale_color_brewer(palette = "Dark2")+
+  theme_classic()
+
+Sex_Plot <- ggplot(Penguins, aes(x = sex, y = body_mass_g, col = sex))+
+  geom_point(alpha = 0.4)+
+  geom_point(data = Penguin_Means_sex, aes(x = sex, y = mean_mass), size = 4)+
+  labs(x = "Sex", y = "Body Mass (g)")+
+  scale_color_brewer(palette = "Dark2")+
+  theme_classic()
+
+Island_Plot <- ggplot(Penguins, aes(x = island, y = body_mass_g, col = island))+
+  geom_point(alpha = 0.4)+
+  geom_point(data = Penguin_Means_island, aes(x = island, y = mean_mass), size = 4)+
+  labs(x = "Island", y = "Body Mass (g)")+
+  scale_color_brewer(palette = "Dark2")+
+  theme_classic()
+
+Species_Sex_Plot <- ggplot(Penguins, aes(x = species, y = body_mass_g, col = sex, group = sex))+
+  geom_point(aes(group = sex), position = position_dodge(width = 0.5), alpha = 0.4)+
+  geom_point(data = Penguin_Means_species_sex, aes(x = species, y = mean_mass, col = sex, group = sex), size = 4, position = position_dodge(width = 0.5))+
+  labs(x = "Species", y = "Body Mass (g)", color = "Sex")+
+  scale_color_brewer(labels = c("Female", "Male"), palette = "Dark2")+
+  theme_classic()
+
+Species_Island_Plot <- ggplot(Penguins, aes(x = species, y = body_mass_g, col = island, group = island))+
+  geom_point(aes(group = island), position = position_dodge(width = 0.5), alpha = 0.4)+
+  geom_point(data = Penguin_Means_species_island, aes(x = species, y = mean_mass, col = island, group = island), size = 4, position = position_dodge(width = 0.5))+
+  labs(x = "Species", y = "Body Mass (g)", color = "Island")+
+  scale_color_brewer(labels = c("Biscoe", "Dream", "Torgersen"), palette = "Dark2")+
+  theme_classic()
+
+Island_Sex_Plot <- ggplot(Penguins, aes(x = island, y = body_mass_g, col = sex, group = sex))+
+  geom_point(aes(group = sex), position = position_dodge(width = 0.5), alpha = 0.4)+
+  geom_point(data = Penguin_Means_island_sex, aes(x = island, y = mean_mass, col = sex, group = sex), size = 4, position = position_dodge(width = 0.5))+
+  labs(x = "Island", y = "Body Mass (g)", color = "Sex")+
+  scale_color_brewer(labels = c("Female", "Male"), palette = "Dark2")+
+  theme_classic()
+
+
+Length_Sex_Plot <- ggplot(Penguins, aes(x = bill_length_mm, y = body_mass_g, col = sex, group = sex))+
+  geom_point(aes(x = bill_length_mm, y = body_mass_g, col = sex, group = sex))+
+  labs(x = "Bill Length (mm)", y = "Body Mass (g)", color = "Sex")+
+  scale_color_brewer(labels = c("Female", "Male"), palette = "Dark2")+
+  theme_classic()
+
+Length_Species_Plot <- ggplot(Penguins, aes(x = bill_length_mm, y = body_mass_g, col = species, group = species))+
+  geom_point(aes(x = bill_length_mm, y = body_mass_g, col = species, group = species))+
+  labs(x = "Bill Length (mm)", y = "Body Mass (g)", color = "Species")+
+  scale_color_brewer(labels = c("Adelie", "Chinstrap", "Gentoo"), palette = "Dark2")+
+  theme_classic()
+
+Length_Island_Plot <- ggplot(Penguins, aes(x = bill_length_mm, y = body_mass_g, col = island, group = island))+
+  geom_point(aes(x = bill_length_mm, y = body_mass_g, col = island, group = island))+
+  labs(x = "Bill Length (mm)", y = "Body Mass (g)", color = "Island")+
+  scale_color_brewer(labels = c("Torgersen", "Biscoe", "Dream"), palette = "Dark2")+
+  theme_classic()
+
+Flipper_Sex_Plot <- ggplot(Penguins, aes(x = flipper_length_mm, y = body_mass_g, col = sex, group = sex))+
+  geom_point(aes(x = flipper_length_mm, y = body_mass_g, col = sex, group = sex))+
+  labs(x = "Flipper Length (mm)", y = "Body Mass (g)", color = "Sex")+
+  scale_color_brewer(labels = c("Female", "Male"), palette = "Dark2")+
+  theme_classic()
+
+Flipper_Species_Plot <- ggplot(Penguins, aes(x = flipper_length_mm, y = body_mass_g, col = species, group = species))+
+  geom_point(aes(x = flipper_length_mm, y = body_mass_g, col = species, group = species))+
+  labs(x = "Flipper Length (mm)", y = "Body Mass (g)", color = "Species")+
+  scale_color_brewer(labels = c("Adelie", "Chinstrap", "Gentoo"), palette = "Dark2")+
+  theme_classic()
+
+Flipper_Island_Plot <- ggplot(Penguins, aes(x = flipper_length_mm, y = body_mass_g, col = island, group = island))+
+  geom_point(aes(x = flipper_length_mm, y = body_mass_g, col = island, group = island))+
+  labs(x = "Flipper Length (mm)", y = "Body Mass (g)", color = "Island")+
+  scale_color_brewer(labels = c("Torgersen", "Biscoe", "Dream"), palette = "Dark2")+
+  theme_classic()
+
+Depth_Sex_Plot <- ggplot(Penguins, aes(x = bill_depth_mm, y = body_mass_g, col = sex, group = sex))+
+  geom_point(aes(x = bill_depth_mm, y = body_mass_g, col = sex, group = sex))+
+  labs(x = "Bill Depth (mm)", y = "Body Mass (g)", color = "Sex")+
+  scale_color_brewer(labels = c("Female", "Male"), palette = "Dark2")+
+  theme_classic()
+
+Depth_Species_Plot <- ggplot(Penguins, aes(x = bill_depth_mm, y = body_mass_g, col = species, group = species))+
+  geom_point(aes(x = bill_depth_mm, y = body_mass_g, col = species, group = species))+
+  labs(x = "Bill Depth (mm)", y = "Body Mass (g)", color = "Species")+
+  scale_color_brewer(labels = c("Adelie", "Chinstrap", "Gentoo"), palette = "Dark2")+
+  theme_classic()
+
+Depth_Island_Plot <- ggplot(Penguins, aes(x = bill_depth_mm, y = body_mass_g, col = island, group = island))+
+  geom_point(aes(x = bill_depth_mm, y = body_mass_g, col = island, group = island))+
+  labs(x = "Bill Depth (mm)", y = "Body Mass (g)", color = "Island")+
+  scale_color_brewer(labels = c("Torgersen", "Biscoe", "Dream"), palette = "Dark2")+
+  theme_classic()
+
+Factor_Plot <- Species_Plot/Sex_Plot/Island_Plot
+
+Two_Way_Factor_Plot <- Species_Sex_Plot/Species_Island_Plot/Island_Sex_Plot
+
+Lenght_Plot <- Length_Species_Plot/Length_Sex_Plot/Length_Island_Plot
+
+Flipper_Plot <- Flipper_Species_Plot/Flipper_Sex_Plot/Flipper_Island_Plot
+
+Depth_Plot <- Depth_Species_Plot/Depth_Sex_Plot/Depth_Island_Plot
+```
+
+#### Formulate Hypotheses
+
+This is a lot of code to investigate many combinations of the different independent (x) variables. By taking the time to look through these figures we get a better understanding of what possible patterns are going on with the data. This process is especially helpful if we don't have the direct theoretical guidance from the sub-field to test for specific hypotheses.
+
+Looking at the categorical variables individually
+
+Species: Gentoo penguins may have larger body mass, hard to tell between Adelie and Chinstrap
+Sex: males may have larger body mass
+Island: Biscoe penguins may have larger body mass, hard to tell between Torgersen and Dream
+
+Looking at the interaction between categorical variables
+
+Species*Sex: Does the difference in body mass between sexes for each species look different?
+Species*Island: There isn't full replication for each species on each island - can't test full factorial
+Island*Sex: Does the difference in body mass between sexes for each island look different?
+
+Looking at the interaction between each continuous variable and a categorical variable
+
+Bill Length*Species: Adelie and Chinstrap seem to have same slope and intercept, Gentoo has lower intercept - slope maybe different
+Bill Length*Sex: Male and Female penguins seem to have same slope and intercept
+Bill Length*Island: Dream and Torgersen seem to have same slope and intercept, Biscoe seems to have larger slope - intercept maybe different
+
+Flipper Length*Species: All species seem to have the same slope and intercept - they just have a different range of flipper length values
+Flipper Length*Sex: Same with the different sexes, but the two clusters we see is related to the species clustering we see - keep this in mind
+Flipper Length*Island: Same with the different islands - the ranges of flipper lengths for species and island are related as we saw in the specie by island graph before
+
+Bill Depth*Species: All species seem to have the same slope but different intercept for the Chinstrap penguins
+Bill Depth*Sex: Hard to interpret this plot given the inter-relatedness with the species plot 
+Bill Depth*Island: Patterns seen in this figure seem to be driven by differences between species - remember there isn't full factorial species:island combination
+
+There is evidence for a possible three-way interaction where the differences in body mass depends on the continuous variables and both the species and sex. Three-way interactions are notoriously difficult to interpret, so we will walk through this analysis carefully.
+
+After reviewing all these graphs we can fit a model that tests the three-way interaction of each Bill Depth, Flipper length, and Bill length and their interaction with Species and Sex on Body Mass. We will also include an interaction effect of Island and sex on Body Mass (we can't test the three-way interaction with Island, Sex, and Species, because each Species is not represented on each Island). There don't seem to be any curvilinear relationships with any of the continuous variables to consider. This could be argued as the "full model" given the logical steps we just went through. We can review other candidate models with fewer parameters to determine which model best fits the data. 
+
+#### Fit Linear Model and Test Assumptions
+
+```{r}
+Model_Full <- lm(body_mass_g ~ bill_depth_mm * species * sex + flipper_length_mm * species * sex + bill_length_mm * species * sex + island * sex, data = Penguins)
+
+check_model(Model_Full, detrend = FALSE)
+
+
+Mod <- lm(body_mass_g ~ bill_length_mm + flipper_length_mm + bill_depth_mm + species + sex + island, data = Penguins)
+summary(Mod)
+car::Anova(Mod, type = 3)
+check_model(Mod, detrend = FALSE)
+```
+
+The assessment of the residuals looks pretty good. The normality of residuals falls along the q-q line. The linearity and homogeneity of variance are flat and horizontal. The collinearity again is higher in the presence of several interaction effects - not a concern. There are no observations identified as outliers or influential observations. The clustering we see with the residuals in the Linearity and Homogeneity of Variance plots are likely due to the observations made in each year - we are ignoring this structure in the data for now, but it is valuable to notice how this un-modeled structure can appear in these residual plots.
+
+#### Interpret Model Results
+
+```{r}
+summary(Model_Full)
+car::Anova(Model_Full, type = 3)
+```
+
+There are many different approaches one can take following the fitting of a complex multiple linear regression model like this. Various model selection processes like forward or backward selection methods are discussed in the literature with pros and cons. The dropping of non-significant covariates and/or terms deemed secondary to the main focus of your hypotheses are also discussed. The other extreme end of the philosophy is to retain each term and report the results as is. Like many other contested opinions, there are nuances to this decision that may impact your individual choice. I am not advocating for one over the other, just that you should be aware of the implications for each approach.
+
+Model selection methods have the potential for misuse and lead to sub-optimal models or other issues. While leaving in all of these terms in the model takes up degrees of freedom where that can be problematic with small sample sizes and the residual degrees of freedom is already small. Whatever choice you use make sure you are transparent in reporting the details of the steps and reference your sub-field specific literature for examples on how to report these steps.
+
+For this example we will spend some time considering subsets of models that fit within our understanding of the patterns within the data and compare model fit statistics to select the best fitting model.
+
+#### Model Selection
+
+```{r}
+# There wasn't too much difference between islands and a lot of variance around their means
+Model_No_Island <- lm(body_mass_g ~ bill_depth_mm * species * sex + flipper_length_mm * species * sex + bill_length_mm * species * sex, data = Penguins)
+
+# Bill length seemed to have the same slope for each species and the different intercept for each species is captured by other the term in the model
+Model_No_Length_int <- lm(body_mass_g ~ bill_depth_mm * species * sex + flipper_length_mm * species * sex + bill_length_mm + island, data = Penguins)
+
+# The three-way interaction seems to be related to the flipper length variable
+Model_Flipper_int <- lm(body_mass_g ~ flipper_length_mm * species * sex + bill_length_mm + bill_depth_mm + island, data = Penguins)
+
+car::Anova(Model_Flipper_int, type = 3)
+
+compare_performance(Model_Full, Model_No_Island, Model_No_Length_int, Model_Flipper_int)
+
+anova(Model_Flipper_int,Model_Full)
+```
+
+The comparison of adjusted R^2 and other model fit statistics indicate the model with only the three-way interaction with flipper length as the best fitting model. There are some close values to compare, but this model is also the simpler (parsimonious) model that retains all the terms in the model. You may have noticed that I kept the term for Island in the model. By keeping the non-significant term in the model we are effectively stating that the covariate has a small but non-zero effect. If the term is removed, then we are explicitly setting the effect to be zero - when the results from the model haven't necessarily confirmed this. The model tells us that the estimate could be zero, but it could also be a value within the measure of standard error around zero.
+
+We did effectively set the three-way interaction terms with bill length and bill depth to be zero, but we have retained the main effects of species and sex and their interactions in the model. This is a balanced middle ground approach that employs both motivations. Ultimately, you should be transparent and let the large scientific community scrutinize your results to ensure the accuracy of the results.
+
+#### Follow up Analyses and Figure to Explain Results
+
+This model has many more variables in the model and there are additional steps to visualize the complexity of these results. We will use the `expand.grid()` function again, but we need to include every term that is fit in the model. The interpretation of these results are for the effect of flipper length and the interaction with species and sex for the different island for an average bill length and bill depth. This is a common method of interpreting terms from a multiple linear regression model.
+
+```{r}
+# Create new data - sequence of flipper length values from min to max, over levels of species, sex, and island variable, and at the mean of bill length and depth
+# Mean values are chosen for other continuous variables because they are continuous variables - the mean value is a real value that could have been measured
+# There are times where the median value should be chosen - when there is an ordinal or integer value
+NewData <- expand.grid(flipper_length_mm = seq(min(Penguins$flipper_length_mm), max(Penguins$flipper_length_mm), length.out = 1000), species = levels(Penguins$species), sex = levels(Penguins$sex), island = levels(Penguins$island), bill_length_mm = mean(Penguins$bill_length_mm), bill_depth_mm = mean(Penguins$bill_depth_mm))
+
+# Create predicted values of yield with standard errors from model using new data
+yhat <- as.data.frame(predict(Model_Flipper_int, newdata = NewData, se.fit = T))
+# Combine the two data sets
+NewData <- cbind(NewData,yhat)
+# Another way to rename the fit variable
+NewData$body_mass_g <- NewData$fit
+
+head(NewData)
+
+Flipper_Three_Way_plot <- ggplot()+
+  facet_wrap(~sex)+
+  geom_point(data = Penguins, aes(x = flipper_length_mm, y = body_mass_g, col = species))+
+  geom_line(data = NewData, aes(x=flipper_length_mm, y = body_mass_g, col = species))+
+  geom_ribbon(data = NewData, aes(x=flipper_length_mm, ymin = body_mass_g - se.fit, ymax = body_mass_g + se.fit, fill = species), alpha = 0.3)+
+  labs(x = "Flipper Length (mm)", y = "Body Mass (g)") +
+  guides(fill = guide_legend(title="Species"), color = guide_legend(title = "Species"))+
+   scale_color_brewer(labels = c("Adelie", "Gentoo", "Chinstrap"), palette = "Dark2") +
+  scale_fill_brewer(labels = c("Adelie", "Gentoo", "Chinstrap"), palette = "Dark2") +
+  theme_classic()
+
+ggsave(here("outputs", "Flipper_Three_Way_plot.tiff"), Flipper_Three_Way_plot, width = 20, height = 15, units = "cm", dpi = 300)
+```
+
+This faceted figure allows us to see the individual trend lines for each species and sex of penguin to see the relationship between flipper length and body mass. There is another function in the `emmeans` package called `emtrend()` that allows us to test for the comparison of these slopes similar to how the `emmeans()` function works.
+
+```{r}
+Flipper_Trends <- Model_Flipper_int %>%
+  emtrends(~species | sex, var = "flipper_length_mm",cov.reduce = range) %>%
+  cld(Letters = letters, decreasing = TRUE) %>%
+  as_tibble()
+```
+
+Here is possible language you could use to describe the interpretation of the results for the three-way interaction.
+
+There was a significant three-way interaction effect where the relationship between flipper length and body mass was different among species of penguins based on the sex of penguin (F (2, 317) = 4.3489, p value = 0.0137007). Results from the nested comparison of estimated marginal means of lienar trends of flipper length among species for each sex was tested using the `emtrends` function from the `emmeans` package (Lenth 2025). When considering the slopes these trend lines within each sex the slope for the male Gentoo penguins is smaller than the male Chinstrap penguins. There are no differences in slopes among the species for the female penguins.
