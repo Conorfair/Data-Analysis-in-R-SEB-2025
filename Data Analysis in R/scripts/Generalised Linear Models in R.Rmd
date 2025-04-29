@@ -391,25 +391,3 @@ emmeans_binomial <- mod_binomial %>%
 The resutls from this model can be interpreted as such:
 
 The null hypothesis that there is no variation in the probability of observing the disease jointly along the gradient of soil moisture and between fields was refuted (F (1, 787) = 35.4549, p value < 0.001). The comparison of the estimated marginal means of linear trends using the `emtrends` function in the `emmeans` package (Lenth 2025) demonstrated that the slope estimate for the effect of soil moisture on the probability of observing the disease in Field 2 was significantly different from the slope in Field 1. Furthermore, the slope estimate for the relationship between soil moisture and the probability of observing the disease in Field 1 was not significantly different from zero.
-
-
-
-
-
-
-The data set is called "Split_Plot_Design.csv" and is located in the "data" folder. These data come from (Gomez & Gomez 1984) and measure the rice yield (kg/ha) of four varieties (G) that are exposed to one of six nitrogen treatments (N) following a split-plot design. The nitrogen treatments are applied at the main plot level and the four varieties are randomly 
-
-The data set is a split-plot design where the main plot is divided into sub-plots. The main plot has two treatments (A and B) and the sub-plots have three treatments (1, 2, and 3). The data set has a categorical variable for the main plot treatment, a categorical variable for the sub-plot treatment, and a continuous variable for the yield data. The data set has 60 observations.
-
-
-
-
-```{r}
-library(desplot)
-grays <- colorRampPalette(c("white","#252525"))
-desplot(Webworms, y ~ col*row|spray,
-        col.regions=grays(10),
-        at=0:10-0.5,
-        out1=block, out2=trt, num=trt, flip=TRUE, # aspect unknown
-        main="beall.webworms (count of worms)")
-```
